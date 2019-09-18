@@ -80,6 +80,8 @@ private[deploy] class DriverRunner(
   /** Starts a thread to run and manage the driver. */
   private[worker] def start() = {
     new Thread("DriverRunner for " + driverId) {
+      // DriverRunner机制
+      // 启动一个java的线程
       override def run() {
         var shutdownHook: AnyRef = null
         try {
@@ -89,6 +91,7 @@ private[deploy] class DriverRunner(
           }
 
           // prepare driver jars and run driver
+          // 获取driver的启动状态返回值
           val exitCode = prepareAndRunDriver()
 
           // set final state depending on if forcibly killed and process exit code
@@ -111,6 +114,7 @@ private[deploy] class DriverRunner(
         }
 
         // notify worker of final driver state, possible exception
+        // 启动完成后，向worker发送DriverStateChanged消息
         worker.send(DriverStateChanged(driverId, finalState.get, finalException))
       }
     }.start()
@@ -169,7 +173,9 @@ private[deploy] class DriverRunner(
   }
 
   private[worker] def prepareAndRunDriver(): Int = {
+    // 创建工作目录
     val driverDir = createWorkingDirectory()
+    // 获取用户编写上传的jar（我们编写的spark应用程序打出来的jar包）到工作目录
     val localJarFilename = downloadUserJar(driverDir)
 
     def substituteVariables(argument: String): String = argument match {
@@ -179,9 +185,11 @@ private[deploy] class DriverRunner(
     }
 
     // TODO: If we add ability to submit multiple jars they should also be added here
+    // 构建processBuilder
+    // 传入了driver的启动命令，需要的内存大小等信息
     val builder = CommandUtils.buildProcessBuilder(driverDesc.command, securityManager,
       driverDesc.mem, sparkHome.getAbsolutePath, substituteVariables)
-
+    // 调用runDriver（通过processBuilder）启动Driver
     runDriver(builder, driverDir, driverDesc.supervise)
   }
 
@@ -198,6 +206,7 @@ private[deploy] class DriverRunner(
       Files.append(header, stderr, StandardCharsets.UTF_8)
       CommandUtils.redirectStream(process.getErrorStream, stderr)
     }
+    // 调用runCommandWithRetry启动
     runCommandWithRetry(ProcessBuilderLike(builder), initialize, supervise)
   }
 
@@ -233,7 +242,7 @@ private[deploy] class DriverRunner(
         waitSeconds = waitSeconds * 2 // exponential back-off
       }
     }
-
+    // 返回driver退出时的状态
     exitCode
   }
 }

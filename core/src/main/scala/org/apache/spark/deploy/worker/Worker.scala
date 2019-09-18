@@ -487,6 +487,7 @@ private[deploy] class Worker(
       registerWithMaster()
 
     case LaunchExecutor(masterUrl, appId, execId, appDesc, cores_, memory_) =>
+      // 如果发送消息的master不是active的则不执行
       if (masterUrl != activeMasterUrl) {
         logWarning("Invalid Master (" + masterUrl + ") attempted to launch executor.")
       } else {
@@ -494,6 +495,7 @@ private[deploy] class Worker(
           logInfo("Asked to launch executor %s/%d for %s".format(appId, execId, appDesc.name))
 
           // Create the executor's working directory
+          // 创建Executor的工作目录
           val executorDir = new File(workDir, appId + "/" + execId)
           if (!executorDir.mkdirs()) {
             throw new IOException("Failed to create directory " + executorDir)
@@ -502,6 +504,8 @@ private[deploy] class Worker(
           // Create local dirs for the executor. These are passed to the executor via the
           // SPARK_EXECUTOR_DIRS environment variable, and deleted by the Worker when the
           // application finishes.
+          // 通过SPARK_EXECUTOR_DIRS环境变量配置创建Executor的本地目录
+          // Worker会在当前application执行结束后删除这个目录
           val appLocalDirs = appDirectories.getOrElse(appId, {
             val localRootDirs = Utils.getOrCreateLocalRootDirs(conf)
             val dirs = localRootDirs.flatMap { dir =>
@@ -522,6 +526,7 @@ private[deploy] class Worker(
             dirs
           })
           appDirectories(appId) = appLocalDirs
+          // 将接收到的application中Executor的相关信息封装为一个ExecutorRunner对象
           val manager = new ExecutorRunner(
             appId,
             execId,
@@ -539,9 +544,12 @@ private[deploy] class Worker(
             conf,
             appLocalDirs, ExecutorState.RUNNING)
           executors(appId + "/" + execId) = manager
+          // 启动这个线程
           manager.start()
+          // 更新worker的资源利用情况
           coresUsed += cores_
           memoryUsed += memory_
+          // 发送ExecutorStateChanged消息给master
           sendToMaster(ExecutorStateChanged(appId, execId, manager.state, None, None))
         } catch {
           case e: Exception =>
@@ -572,8 +580,10 @@ private[deploy] class Worker(
         }
       }
 
+    // 处理Master发送过来的LaunchDriver
     case LaunchDriver(driverId, driverDesc) =>
       logInfo(s"Asked to launch driver $driverId")
+      // 创建DriverRunner
       val driver = new DriverRunner(
         conf,
         driverId,
@@ -584,9 +594,11 @@ private[deploy] class Worker(
         workerUri,
         securityMgr)
       drivers(driverId) = driver
+      // 调用DriverRunner的start方法
       driver.start()
-
+      // worker已使用的core加上分配给driver的core
       coresUsed += driverDesc.cores
+      // 已使用的内存加上分配给driver的内存
       memoryUsed += driverDesc.mem
 
     case KillDriver(driverId) =>
@@ -598,7 +610,9 @@ private[deploy] class Worker(
           logError(s"Asked to kill unknown driver $driverId")
       }
 
+    // driver执行完之后，DriverRunner线程会发送过来driverStateChanged（DriverStateChanged）消息
     case driverStateChanged @ DriverStateChanged(driverId, state, exception) =>
+      // 调用handleDriverStateChanged向master发送driverStateChanged（driver启动后的状态码）
       handleDriverStateChanged(driverStateChanged)
 
     case ReregisterWithMaster =>
@@ -715,10 +729,14 @@ private[deploy] class Worker(
       case _ =>
         logDebug(s"Driver $driverId changed state to $state")
     }
+    // 向master发送driverStateChanged消息
     sendToMaster(driverStateChanged)
+    // 将Driver从本地缓存移除
     val driver = drivers.remove(driverId).get
+    // 将Driver加入完成Driver的队列
     finishedDrivers(driverId) = driver
     trimFinishedDriversIfNecessary()
+    // 将Driver的内存和cpu释放出来
     memoryUsed -= driver.driverDesc.mem
     coresUsed -= driver.driverDesc.cores
   }

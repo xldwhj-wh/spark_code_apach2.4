@@ -69,9 +69,11 @@ private[deploy] class ExecutorRunner(
   private var shutdownHook: AnyRef = null
 
   private[worker] def start() {
+    // 创建线程
     workerThread = new Thread("ExecutorRunner for " + fullId) {
       override def run() { fetchAndRunExecutor() }
     }
+    // 启动线程，执行run方法
     workerThread.start()
     // Shutdown hook that kills actors on shutdown.
     shutdownHook = ShutdownHookManager.addShutdownHook { () =>
@@ -138,16 +140,34 @@ private[deploy] class ExecutorRunner(
 
   /**
    * Download and run the executor described in our ApplicationDescription
+    * fetchAndRunExecutor方法中将收到的信息拼接为Linux命令，
+    * 然后使用ProcessBuilder执行Linux命令启动CoarseGrainedExecutorBackend进程
+    * 粗粒度的ExecutorBackend进程与Executor是一对一的关系
    */
   private def fetchAndRunExecutor() {
     try {
       // Launch the process
+      // 此处使用appDesc.command，该值由standaloneschedulerBackend类中构造appDesc传入
+      // 其值为org.apache.spark.executor.CoarseGrainedExecutorBackend
+      // 并随着Application注册到Master，启动Executor时会加载该类的main方法作为入口
       val subsOpts = appDesc.command.javaOpts.map {
         Utils.substituteAppNExecIds(_, appId, execId.toString)
       }
       val subsCommand = appDesc.command.copy(javaOpts = subsOpts)
+      // 创建ProcessBuilder
       val builder = CommandUtils.buildProcessBuilder(subsCommand, new SecurityManager(conf),
         memory, sparkHome.getAbsolutePath, substituteVariables)
+      // 封装启动指令
+      /*
+      启动指令大致如下：
+      ${JAVA_HOME}/bin/java -cp "${SPARK_EXECUTOR_JAVA_OPTS[@]}" \
+      -Xms2048M -Xmx2048M  -Dspark.driver.port=42210 -XX:<axPermSize=256M \
+      org.apache.spark.executor.CoarseGrainedExecutorBackend \
+      --driver-url $SPARK_DRIVER_URL --executor-id $SPARK_EXECUTOR_ID \
+      --cores $SPARK_EXECUTOR_CORES --app-id $SPARK_APPLICATION_ID \
+      --hostname $SPARK_EXECUTOR_POD_IP
+       */
+      // 上面的java命令会调用CoarseGrainedExecutorBackend的main方法
       val command = builder.command()
       val formattedCommand = command.asScala.mkString("\"", "\" \"", "\"")
       logInfo(s"Launch command: $formattedCommand")
@@ -168,6 +188,7 @@ private[deploy] class ExecutorRunner(
       builder.environment.put("SPARK_LOG_URL_STDERR", s"${baseUrl}stderr")
       builder.environment.put("SPARK_LOG_URL_STDOUT", s"${baseUrl}stdout")
 
+      // 启动进程,使用processBuilder执行linux命令，启动CoarseGrainedExecutorBackend
       process = builder.start()
       val header = "Spark Executor Command: %s\n%s\n\n".format(
         formattedCommand, "=" * 40)
@@ -182,9 +203,11 @@ private[deploy] class ExecutorRunner(
 
       // Wait for it to exit; executor may exit with code 0 (when driver instructs it to shutdown)
       // or with nonzero exit code
+      // 等待进程启动完成之后的退出码
       val exitCode = process.waitFor()
       state = ExecutorState.EXITED
       val message = "Command exited with code " + exitCode
+      // 向worker发送包含退出码的ExecutorStateChanged消息
       worker.send(ExecutorStateChanged(appId, execId, state, Some(message), Some(exitCode)))
     } catch {
       case interrupted: InterruptedException =>

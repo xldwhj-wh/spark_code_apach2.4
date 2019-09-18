@@ -360,6 +360,8 @@ class SparkContext(config: SparkConf) extends Logging {
     Utils.setLogLevel(org.apache.log4j.Level.toLevel(upperCased))
   }
 
+
+  // 代码块，每次构造sparkcontext时都会执行
   try {
     _conf = config.clone()
     _conf.validateSettings()
@@ -490,6 +492,7 @@ class SparkContext(config: SparkConf) extends Logging {
       HeartbeatReceiver.ENDPOINT_NAME, new HeartbeatReceiver(this))
 
     // Create and start the scheduler
+    // 根据提交任务的deploy-mode创建不同类型的TaskScheduler和SchedulerBackend
     val (sched, ts) = SparkContext.createTaskScheduler(this, master, deployMode)
     _schedulerBackend = sched
     _taskScheduler = ts
@@ -498,6 +501,7 @@ class SparkContext(config: SparkConf) extends Logging {
 
     // start TaskScheduler after taskScheduler sets DAGScheduler reference in DAGScheduler's
     // constructor
+    // 启动taskscheduler,调用TaskSchedulerImpl的start方法
     _taskScheduler.start()
 
     _applicationId = _taskScheduler.applicationId()
@@ -2044,6 +2048,7 @@ class SparkContext(config: SparkConf) extends Logging {
    * partitions of the target RDD, e.g. for operations like `first()`
    * @param resultHandler callback to pass each result to
    */
+  // RDD运行action操作时调用SparkContext的一系列runJob操作直到该方法
   def runJob[T, U: ClassTag](
       rdd: RDD[T],
       func: (TaskContext, Iterator[T]) => U,
@@ -2058,6 +2063,7 @@ class SparkContext(config: SparkConf) extends Logging {
     if (conf.getBoolean("spark.logLineage", false)) {
       logInfo("RDD's recursive dependencies:\n" + rdd.toDebugString)
     }
+    // 继续调用DagScheduler的runjob方法
     dagScheduler.runJob(rdd, cleanedFunc, partitions, callSite, resultHandler, localProperties.get)
     progressBar.foreach(_.finishAll())
     rdd.doCheckpoint()
@@ -2723,6 +2729,7 @@ object SparkContext extends Logging {
     val MAX_LOCAL_TASK_FAILURES = 1
 
     master match {
+        // local模式
       case "local" =>
         val scheduler = new TaskSchedulerImpl(sc, MAX_LOCAL_TASK_FAILURES, isLocal = true)
         val backend = new LocalSchedulerBackend(sc.getConf, scheduler, 1)
@@ -2751,6 +2758,7 @@ object SparkContext extends Logging {
         scheduler.initialize(backend)
         (backend, scheduler)
 
+        // spark的standalone模式
       case SPARK_REGEX(sparkUrl) =>
         val scheduler = new TaskSchedulerImpl(sc)
         val masterUrls = sparkUrl.split(",").map("spark://" + _)
@@ -2779,12 +2787,22 @@ object SparkContext extends Logging {
         (backend, scheduler)
 
       case masterUrl =>
+        // getClusterManager方法根据masterUrl选出符合的类构造scheduler和backend
+        // 如masterUrl包含yarn关键字，则获取到YarnClusterManager类来执行下述过程
         val cm = getClusterManager(masterUrl) match {
           case Some(clusterMgr) => clusterMgr
           case None => throw new SparkException("Could not parse Master URL: '" + master + "'")
         }
         try {
+          // 如masterUrl包含yarn关键字，则调用YarnClusterManager的createTaskScheduler方法创建scheduler
+          // 在createTaskScheduler方法中，进一步匹配deploy-mode关键字
+          // 如果匹配到cluster，即表明使用yarn-cluster模式，则使用YarnClusterScheduler创建scheduler
+          // 如果匹配到client，则表明使用yarn-client模式，则使用YarnScheduler创建scheduler
           val scheduler = cm.createTaskScheduler(sc, masterUrl)
+          // 如masterUrl包含yarn关键字，则调用YarnClusterManager的createSchedulerBackend创建backend
+          // 在createSchedulerBackend方法中，进一步匹配deploy-mode关键字
+          // 如果匹配到cluster，即表明使用yarn-cluster模式，则使用YarnClusterSchedulerBackend创建backend
+          // 如果匹配到client，则表明使用yarn-client模式，则使用YarnClientSchedulerBackend创建scheduler
           val backend = cm.createSchedulerBackend(sc, masterUrl, scheduler)
           cm.initialize(scheduler, backend)
           (backend, scheduler)
@@ -2798,6 +2816,9 @@ object SparkContext extends Logging {
 
   private def getClusterManager(url: String): Option[ExternalClusterManager] = {
     val loader = Utils.getContextOrSparkClassLoader
+    // 先加载所有ExternalClusterManager的实现类，
+    // 然后根据ExternalClusterManager类中的canCreate方法来判断哪一个实现类符合url的规则
+    // 然后使用符合url规则的实现类获取到这个实例对象
     val serviceLoaders =
       ServiceLoader.load(classOf[ExternalClusterManager], loader).asScala.filter(_.canCreate(url))
     if (serviceLoaders.size > 1) {

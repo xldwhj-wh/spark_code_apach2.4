@@ -29,6 +29,9 @@ private[spark] class YarnClusterManager extends ExternalClusterManager {
     masterURL == "yarn"
   }
 
+  // 在createTaskScheduler方法中，进一步匹配关键字deploy-mode
+  // 如果匹配到cluster，即表明使用yarn-cluster模式，则使用YarnClusterScheduler创建scheduler
+  // 如果匹配到client，则表明使用yarn-client模式，则使用YarnScheduler创建scheduler
   override def createTaskScheduler(sc: SparkContext, masterURL: String): TaskScheduler = {
     sc.deployMode match {
       case "cluster" => new YarnClusterScheduler(sc)
@@ -37,6 +40,9 @@ private[spark] class YarnClusterManager extends ExternalClusterManager {
     }
   }
 
+  // 在createSchedulerBackend方法中，进一步匹配deploy-mode关键字
+  // 如果匹配到cluster，即表明使用yarn-cluster模式，则使用YarnClusterSchedulerBackend创建backend
+  // 如果匹配到client，则表明使用yarn-client模式，则使用YarnClientSchedulerBackend创建scheduler
   override def createSchedulerBackend(sc: SparkContext,
       masterURL: String,
       scheduler: TaskScheduler): SchedulerBackend = {

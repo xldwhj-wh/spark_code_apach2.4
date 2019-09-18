@@ -37,6 +37,11 @@ import org.apache.spark.scheduler.cluster.CoarseGrainedClusterMessages._
 import org.apache.spark.serializer.SerializerInstance
 import org.apache.spark.util.{ThreadUtils, Utils}
 
+// worker中为application启动的Executor实际上是CoarseGrainedExecutorBackend
+// CoarseGrainedExecutorBackend是RpcEndpoint的子类，能够和Driver进行RPC通信。
+// CoarseGrainedExecutorBackend维护了两个属性executor和driver
+// executor负责运行task，driver负责和Driver通信。
+// ExecutorBackend有抽象方法statusUpdate，负责将Executor的计算结果返回给Driver。
 private[spark] class CoarseGrainedExecutorBackend(
     override val rpcEnv: RpcEnv,
     driverUrl: String,
@@ -60,6 +65,8 @@ private[spark] class CoarseGrainedExecutorBackend(
     rpcEnv.asyncSetupEndpointRefByURI(driverUrl).flatMap { ref =>
       // This is a very fast action so we can use "ThreadUtils.sameThread"
       driver = Some(ref)
+      // 启动起来之后向Driver发送RegisterExecutor消息
+      // 反向向Driver注册（CoarseGrainedSchedulerBackend）
       ref.ask[Boolean](RegisterExecutor(executorId, self, hostname, cores, extractLogUrls))
     }(ThreadUtils.sameThread).onComplete {
       // This is a very fast action so we can use "ThreadUtils.sameThread"
@@ -77,6 +84,9 @@ private[spark] class CoarseGrainedExecutorBackend(
   }
 
   override def receive: PartialFunction[Any, Unit] = {
+    // 接收到来自CoarseGrainedSchedulerBackend注册成功的消息
+    // 此时CoarseGrainedExecutorBackend会创建Executor对象，作为执行句柄
+    // 其实他的大部分功能都是通过Executor实现的
     case RegisteredExecutor =>
       logInfo("Successfully registered with driver")
       try {
@@ -89,12 +99,15 @@ private[spark] class CoarseGrainedExecutorBackend(
     case RegisterExecutorFailed(message) =>
       exitExecutor(1, "Slave registration failed: " + message)
 
+      // 接收来自SchedulerBackend的LaunchTask消息启动Task
     case LaunchTask(data) =>
       if (executor == null) {
         exitExecutor(1, "Received LaunchTask command but executor was null")
       } else {
+        // 反序列化task
         val taskDesc = TaskDescription.decode(data.value)
         logInfo("Got assigned task " + taskDesc.taskId)
+        // 用内部的执行句柄Executor的launchTask方法来启动一个Task
         executor.launchTask(this, taskDesc)
       }
 
@@ -277,7 +290,8 @@ private[spark] object CoarseGrainedExecutorBackend extends Logging {
       appId == null) {
       printUsageAndExit()
     }
-
+    // 经过一系列的参数初始化后执行run方法获取CoarseGrainedExecutorBackend实例
+    // 之后调用CoarseGrainedExecutorBackend的onStart方法，向Driver注册
     run(driverUrl, executorId, hostname, cores, appId, workerUrl, userClassPath)
     System.exit(0)
   }

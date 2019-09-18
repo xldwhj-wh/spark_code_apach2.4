@@ -166,7 +166,12 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val rpcEnv: Rp
 
     override def receiveAndReply(context: RpcCallContext): PartialFunction[Any, Unit] = {
 
+      // 接收处理来自CoarseGrainedExecutorBackend发送过来的RegisterExecutor消息
       case RegisterExecutor(executorId, executorRef, hostname, cores, logUrls) =>
+        // executorDataMap，用于存储注册的ExecutorBackend信息
+        // 如果未被注册，则将其存入executorDataMap中
+        // 如果已被注册，则向CoarseGrainedExecutorBackend发送RegisterExecutorFailed消息
+        // 提示重复注册
         if (executorDataMap.contains(executorId)) {
           executorRef.send(RegisterExecutorFailed("Duplicate executor ID: " + executorId))
           context.reply(true)
@@ -203,11 +208,13 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val rpcEnv: Rp
               logDebug(s"Decremented number of pending executors ($numPendingExecutors left)")
             }
           }
+          // 发送RegisteredExecutor消息通知CoarseGrainedExecutorBackend注册ExecutorBackend成功
           executorRef.send(RegisteredExecutor)
           // Note: some tests expect the reply to come after we put the executor in the map
           context.reply(true)
           listenerBus.post(
             SparkListenerExecutorAdded(System.currentTimeMillis(), executorId, data))
+          //  注册成功之后，调用makeOffers()方法给ExecutorBackend分配资源，并且启动Task任务
           makeOffers()
         }
 
@@ -248,6 +255,7 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val rpcEnv: Rp
         scheduler.resourceOffers(workOffers)
       }
       if (!taskDescs.isEmpty) {
+        // 调用launchTask方法，启动Task任务
         launchTasks(taskDescs)
       }
     }
@@ -309,6 +317,7 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val rpcEnv: Rp
           logDebug(s"Launching task ${task.taskId} on executor id: ${task.executorId} hostname: " +
             s"${executorData.executorHost}.")
 
+          // 向ExecutorBackend发送LaunchTask消息，启动task
           executorData.executorEndpoint.send(LaunchTask(new SerializableBuffer(serializedTask)))
         }
       }

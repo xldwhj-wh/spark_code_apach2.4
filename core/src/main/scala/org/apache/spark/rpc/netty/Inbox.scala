@@ -77,6 +77,7 @@ private[netty] class Inbox(
   private var numActiveThreads = 0
 
   // OnStart should be the first message to process
+  // 发送OnStart方法给process
   inbox.synchronized {
     messages.add(OnStart)
   }
@@ -118,6 +119,9 @@ private[netty] class Inbox(
               throw new SparkException(s"Unsupported message $message from ${_sender}")
             })
 
+          // 匹配到发送过来的OnStart消息后，调用RpcEndpoint对象的onStart方法
+          // （StandaloneAppClient构建client使用StandaloneAppClient内部类ClientEndpoint的OnStart方法）
+          //
           case OnStart =>
             endpoint.onStart()
             if (!endpoint.isInstanceOf[ThreadSafeRpcEndpoint]) {

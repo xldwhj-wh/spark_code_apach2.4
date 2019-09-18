@@ -81,6 +81,7 @@ private[spark] class StandaloneAppClient(
     private val registrationRetryThread =
       ThreadUtils.newDaemonSingleThreadScheduledExecutor("appclient-registration-retry-thread")
 
+    // 执行Application注册Master命令
     override def onStart(): Unit = {
       try {
         registerWithMaster(1)
@@ -96,6 +97,7 @@ private[spark] class StandaloneAppClient(
      *  Register with all masters asynchronously and returns an array `Future`s for cancellation.
      */
     private def tryRegisterAllMasters(): Array[JFuture[_]] = {
+      // 构建Runnable线程遍历master节点进行注册
       for (masterAddress <- masterRpcAddresses) yield {
         registerMasterThreadPool.submit(new Runnable {
           override def run(): Unit = try {
@@ -104,6 +106,7 @@ private[spark] class StandaloneAppClient(
             }
             logInfo("Connecting to master " + masterAddress.toSparkURL + "...")
             val masterRef = rpcEnv.setupEndpointRef(masterAddress, Master.ENDPOINT_NAME)
+            // 向master节点发送RegisterApplication消息
             masterRef.send(RegisterApplication(appDescription, self))
           } catch {
             case ie: InterruptedException => // Cancelled
@@ -121,6 +124,7 @@ private[spark] class StandaloneAppClient(
      * nthRetry means this is the nth attempt to register with master.
      */
     private def registerWithMaster(nthRetry: Int) {
+      // 使用tryRegisterAllMasters方法注册Application
       registerMasterFutures.set(tryRegisterAllMasters())
       registrationRetryTimer.set(registrationRetryThread.schedule(new Runnable {
         override def run(): Unit = {
@@ -273,6 +277,7 @@ private[spark] class StandaloneAppClient(
 
   def start() {
     // Just launch an rpcEndpoint; it will call back into the listener.
+    // 调用NettyRpcEnv的setupEndpoint方法
     endpoint.set(rpcEnv.setupEndpoint("AppClient", new ClientEndpoint(rpcEnv)))
   }
 

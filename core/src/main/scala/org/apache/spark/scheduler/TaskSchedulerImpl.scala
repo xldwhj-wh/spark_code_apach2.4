@@ -175,6 +175,10 @@ private[spark] class TaskSchedulerImpl(
   def newTaskId(): Long = nextTaskId.getAndIncrement()
 
   override def start() {
+    // local模式调用LocalSchedulerBackend的start方法
+    // Standalone模式调用StandaloneSchedulerBackend的start方法
+    // yarn-cluster模式调用YarnClusterSchedulerBackend的start方法
+    // yarn-client模式调用YarnClientSchedulerBackend的start方法
     backend.start()
 
     if (!isLocal && conf.getBoolean("spark.speculation", false)) {

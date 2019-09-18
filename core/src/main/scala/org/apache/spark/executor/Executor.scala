@@ -195,8 +195,15 @@ private[spark] class Executor(
   private[executor] def numRunningTasks: Int = runningTasks.size()
 
   def launchTask(context: ExecutorBackend, taskDescription: TaskDescription): Unit = {
+    // 对于每一个task，都会创建一个TaskRunner
+    // TaskRunner集成的是Runnable接口
     val tr = new TaskRunner(context, taskDescription)
+    // 将TaskRunner放入内存缓存
     runningTasks.put(taskDescription.taskId, tr)
+    // Executor内部存在threadPool线程池，
+    // 将task封装到一个线程中（TaskRunner）
+    // 并将线程丢入到线程池threadPool中
+    // 在线程池中的线程是排队执行的
     threadPool.execute(tr)
   }
 
