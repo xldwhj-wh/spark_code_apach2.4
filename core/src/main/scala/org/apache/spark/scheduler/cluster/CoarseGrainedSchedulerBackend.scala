@@ -118,8 +118,11 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val rpcEnv: Rp
     }
 
     override def receive: PartialFunction[Any, Unit] = {
+      // 接收来自CoarseGrainedExecutorBackend发送过来的消息
+      // 处理task执行结束的事件
       case StatusUpdate(executorId, taskId, state, data) =>
         scheduler.statusUpdate(taskId, state, data.value)
+        // 如果task结束了，则从内存缓存中移除，并释放占用的资源
         if (TaskState.isFinished(state)) {
           executorDataMap.get(executorId) match {
             case Some(executorInfo) =>

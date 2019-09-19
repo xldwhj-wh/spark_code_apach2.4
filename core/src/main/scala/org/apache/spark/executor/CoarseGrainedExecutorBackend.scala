@@ -104,7 +104,7 @@ private[spark] class CoarseGrainedExecutorBackend(
       if (executor == null) {
         exitExecutor(1, "Received LaunchTask command but executor was null")
       } else {
-        // 反序列化task
+        // 反序列化接收的task
         val taskDesc = TaskDescription.decode(data.value)
         logInfo("Got assigned task " + taskDesc.taskId)
         // 用内部的执行句柄Executor的launchTask方法来启动一个Task
@@ -155,6 +155,9 @@ private[spark] class CoarseGrainedExecutorBackend(
 
   override def statusUpdate(taskId: Long, state: TaskState, data: ByteBuffer) {
     val msg = StatusUpdate(executorId, taskId, state, data)
+    // 向Driver（SchedulerBackend）发送StatusUpdate消息
+    // 如果是standlone模式，则CoarseGrainedSchedulerBackend中进行消息处理
+    // 因为StandloneSchedulerBackend继承CoarseGrainedSchedulerBackend
     driver match {
       case Some(driverRef) => driverRef.send(msg)
       case None => logWarning(s"Drop $msg because has not yet connected to driver")

@@ -48,7 +48,12 @@ private[spark] class MapPartitionsRDD[U: ClassTag, T: ClassTag](
 
   override def getPartitions: Array[Partition] = firstParent[T].partitions
 
+  // computer即是针对RDD中某个partition执行我们给这个RDD定义的算子和函数
   override def compute(split: Partition, context: TaskContext): Iterator[U] =
+  // 此处的f可以理解成我们自己定义的算子和函数
+  // 但是spark内部进行了封装，还实现了一些其他逻辑
+  // 调用到这里为止，其实就是针对rdd的partition，执行自定义的计算操作
+  // 并返回新的RDD的partition的数据
     f(context, split.index, firstParent[T].iterator(split, context))
 
   override def clearDependencies() {

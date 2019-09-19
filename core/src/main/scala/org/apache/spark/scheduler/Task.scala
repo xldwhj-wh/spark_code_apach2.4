@@ -82,6 +82,9 @@ private[spark] abstract class Task[T](
     SparkEnv.get.blockManager.registerTask(taskAttemptId)
     // TODO SPARK-24874 Allow create BarrierTaskContext based on partitions, instead of whether
     // the stage is barrier.
+    // 创建一个taskContext，相当于task执行的上下文
+    // 里面记录了task执行的一些全局性的数据
+    // 比如task执行了几次，属于哪个stage，task要处理的是rdd的哪个partition等等
     val taskContext = new TaskContextImpl(
       stageId,
       stageAttemptId, // stageAttemptId and stageAttemptNumber are semantically equal
@@ -118,6 +121,7 @@ private[spark] abstract class Task[T](
       Option(attemptNumber)).setCurrentContext()
 
     try {
+      // 调用runTask抽象方法，ShuffleMapTask或者ResultTask
       runTask(context)
     } catch {
       case e: Throwable =>
@@ -165,6 +169,9 @@ private[spark] abstract class Task[T](
     this.taskMemoryManager = taskMemoryManager
   }
 
+  // 调用到了抽象方法，封装了子类通用的数据和操作
+  // 实现类有ResultTask和ShuffleMapTask
+  // 实际上是调用子类的runTask方法
   def runTask(context: TaskContext): T
 
   def preferredLocations: Seq[TaskLocation] = Nil

@@ -203,7 +203,7 @@ private[spark] class Executor(
     // Executor内部存在threadPool线程池，
     // 将task封装到一个线程中（TaskRunner）
     // 并将线程丢入到线程池threadPool中
-    // 在线程池中的线程是排队执行的
+    // 在线程池中的线程是排队执行的,执行Executor中定义的run方法
     threadPool.execute(tr)
   }
 
@@ -271,6 +271,7 @@ private[spark] class Executor(
     ManagementFactory.getGarbageCollectorMXBeans.asScala.map(_.getCollectionTime).sum
   }
 
+  // 从TaskRunner开始剖析我们的Task运行工作原理
   class TaskRunner(
       execBackend: ExecutorBackend,
       private val taskDescription: TaskDescription)
@@ -371,9 +372,12 @@ private[spark] class Executor(
       try {
         // Must be set before updateDependencies() is called, in case fetching dependencies
         // requires access to properties contained within (e.g. for access control).
+        // 对序列化的数据，进行反序列化
         Executor.taskDeserializationProps.set(taskDescription.properties)
-
+        // 通过网络通信的方法，把task运行所需要的文件、资源、jar等拉取过来
         updateDependencies(taskDescription.addedFiles, taskDescription.addedJars)
+        // 通过正式的反序列化操作，将整个task的数据集反序列化回来
+        // 这里用ClassLoader的原因是通过指定的上下文资源,进行加载和读取
         task = ser.deserialize[Task[Any]](
           taskDescription.serializedTask, Thread.currentThread.getContextClassLoader)
         task.localProperties = taskDescription.properties
@@ -400,12 +404,19 @@ private[spark] class Executor(
         }
 
         // Run the actual task and measure its runtime.
+        // 计算出task开始的时间
         taskStartTime = System.currentTimeMillis()
         taskStartCpu = if (threadMXBean.isCurrentThreadCpuTimeSupported) {
           threadMXBean.getCurrentThreadCpuTime
         } else 0L
         var threwException = true
+        // 这里的value对于ShuffleMapTask来说，其实就是MapStatus
+        // 封装了ShuffleMapTask计算的数据输出的位置
+        // 后边如果还是一个ShuffleMapTask
+        // 那么就会去联系MapOutputTracker，来获取上一个ShuffleMapTask的输出位置，然后通过网络拉取数据
+        // ResultTask也是一样的
         val value = Utils.tryWithSafeFinally {
+          // 执行task，调用Task的run方法
           val res = task.run(
             taskAttemptId = taskId,
             attemptNumber = taskDescription.attemptNumber,
@@ -452,6 +463,7 @@ private[spark] class Executor(
         // If the task has been killed, let's fail it.
         task.context.killTaskIfInterrupted()
 
+        // 对mapstatus进行各种序列化和封装，应为后边要通过网络发送给Driver
         val resultSer = env.serializer.newInstance()
         val beforeSerialization = System.currentTimeMillis()
         val valueBytes = resultSer.serialize(value)
@@ -459,6 +471,8 @@ private[spark] class Executor(
 
         // Deserialization happens in two parts: first, we deserialize a Task object, which
         // includes the Partition. Second, Task.run() deserializes the RDD and function to be run.
+        // 将Task运行的统计信息（例如运行多长时间，反序列化耗费了多长时间，Java虚拟机的gc耗费时间
+        // 、结果的序列化耗费的时间等）加入到metrics，这些信息会在SparkUI上显示，端口一般为4040
         task.metrics.setExecutorDeserializeTime(
           (taskStartTime - deserializeStartTime) + task.executorDeserializeTime)
         task.metrics.setExecutorDeserializeCpuTime(
@@ -541,6 +555,7 @@ private[spark] class Executor(
         }
 
         setTaskFinishedAndClearInterruptStatus()
+        // 核心代码，调用了Executor所在的CoarseGrainedExecutorBackend的statusUpdate方法
         execBackend.statusUpdate(taskId, TaskState.FINISHED, serializedResult)
 
       } catch {
@@ -791,9 +806,14 @@ private[spark] class Executor(
    * SparkContext. Also adds any new JARs we fetched to the class loader.
    */
   private def updateDependencies(newFiles: Map[String, Long], newJars: Map[String, Long]) {
+    // 获取hadoop的配置文件
     lazy val hadoopConf = SparkHadoopUtil.get.newConfiguration(conf)
+    // 多线程并发访问同步
+    // 应为task实际上是以java线程的方式，在一个CoarseGrainedExecutorBackend进程内并发运行的
+    // 如果在执行业务逻辑时访问共享资源（诸如currentFile等），会出现多线程并发访问的安全问题。
     synchronized {
       // Fetch missing dependencies
+      // 遍历要拉取的文件，通过网络通信从远程拉取文件
       for ((name, timestamp) <- newFiles if currentFiles.getOrElse(name, -1L) < timestamp) {
         logInfo("Fetching " + name + " with timestamp " + timestamp)
         // Fetch file with useCache mode, close cache for local mode.
@@ -801,6 +821,7 @@ private[spark] class Executor(
           env.securityManager, hadoopConf, timestamp, useCache = !isLocal)
         currentFiles(name) = timestamp
       }
+      // 遍历要拉取的jar，并进行如下处理
       for ((name, timestamp) <- newJars) {
         val localName = new URI(name).getPath.split("/").last
         val currentTimeStamp = currentJars.get(name)
@@ -809,6 +830,7 @@ private[spark] class Executor(
         if (currentTimeStamp < timestamp) {
           logInfo("Fetching " + name + " with timestamp " + timestamp)
           // Fetch file with useCache mode, close cache for local mode.
+          // 通过该方法拉取jar文件
           Utils.fetchFile(name, new File(SparkFiles.getRootDirectory()), conf,
             env.securityManager, hadoopConf, timestamp, useCache = !isLocal)
           currentJars(name) = timestamp

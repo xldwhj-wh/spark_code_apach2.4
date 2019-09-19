@@ -266,6 +266,7 @@ private[deploy] class Master(
 
     case RegisterApplication(description, driver) =>
       // TODO Prevent repeated registrations from some driver
+
       // 如果master的状态是standby，也就是当前这个接收消息的master是standby master，不是active master
       // 那么Application的注册请求什么都不做
       if (state == RecoveryState.STANDBY) {

@@ -283,8 +283,10 @@ abstract class RDD[T: ClassTag](
    */
   final def iterator(split: Partition, context: TaskContext): Iterator[T] = {
     if (storageLevel != StorageLevel.NONE) {
+      // 如果存在存储级别，尝试读取内存数据进行迭代计算
       getOrCompute(split, context)
     } else {
+      // 进行RDD partition的计算
       computeOrReadCheckpoint(split, context)
     }
   }
@@ -321,6 +323,7 @@ abstract class RDD[T: ClassTag](
     if (isCheckpointedAndMaterialized) {
       firstParent[T].iterator(split, context)
     } else {
+      // 使用MapPartitionsRDD中的compute进行举例讲解
       compute(split, context)
     }
   }
