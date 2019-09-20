@@ -37,6 +37,8 @@ import org.apache.spark.util.{ThreadUtils, Utils}
  * BlockManagerMasterEndpoint is an [[ThreadSafeRpcEndpoint]] on the master node to track statuses
  * of all slaves' block managers.
  */
+// BlockManagerMasterEndpoint就是负责维护各个executor的BlockManager的元数据
+// BlockManagerInfo、BlockStatus等信息
 private[spark]
 class BlockManagerMasterEndpoint(
     override val rpcEnv: RpcEnv,
@@ -46,9 +48,14 @@ class BlockManagerMasterEndpoint(
   extends ThreadSafeRpcEndpoint with Logging {
 
   // Mapping from block manager id to the block manager's information.
+  // 这个Map映射了block manager的id到block manager的info
+  // BlockManagerId -- BlockManagerInfo的映射
+  // BlockManagerMaster要维护每个BlockManager的BlockManagerInfo
   private val blockManagerInfo = new mutable.HashMap[BlockManagerId, BlockManagerInfo]
 
   // Mapping from executor ID to block manager ID.
+  // 该处映射了ExecutorId到BlockManagerId的映射
+  // 也就是说每个Executor是与一个BlockManager相关联的
   private val blockManagerIdByExecutor = new mutable.HashMap[String, BlockManagerId]
 
   // Mapping from block id to the set of block managers that have the block.
@@ -73,6 +80,7 @@ class BlockManagerMasterEndpoint(
   logInfo("BlockManagerMasterEndpoint up")
 
   override def receiveAndReply(context: RpcCallContext): PartialFunction[Any, Unit] = {
+    // BlockManager启动之后想BlockManagerMaster进行注册
     case RegisterBlockManager(blockManagerId, maxOnHeapMemSize, maxOffHeapMemSize, slaveEndpoint) =>
       context.reply(register(blockManagerId, maxOnHeapMemSize, maxOffHeapMemSize, slaveEndpoint))
 
@@ -207,16 +215,21 @@ class BlockManagerMasterEndpoint(
   }
 
   private def removeBlockManager(blockManagerId: BlockManagerId) {
+    // 根据blockManagerId从blockManagerInfo获取到对应各info信息
     val info = blockManagerInfo(blockManagerId)
 
     // Remove the block manager from blockManagerIdByExecutor.
+    // 从blockManagerIdByExecutor map中移除executorId对应的blockManagerId
     blockManagerIdByExecutor -= blockManagerId.executorId
 
     // Remove it from blockManagerInfo and remove all the blocks.
+    // 从blockManagerInfo中移除blockManagerId对应的blockManagerInfo
     blockManagerInfo.remove(blockManagerId)
 
     val iterator = info.blocks.keySet.iterator
+    // 遍历该blockManagerInfo内部所有的block块的blockId
     while (iterator.hasNext) {
+      //  清空blockManagerInfo内部的block的blockStatus信息
       val blockId = iterator.next
       val locations = blockLocations.get(blockId)
       locations -= blockManagerId
@@ -250,6 +263,7 @@ class BlockManagerMasterEndpoint(
 
   private def removeExecutor(execId: String) {
     logInfo("Trying to remove executor " + execId + " from BlockManagerMaster.")
+    // 获取ExecutorId对应的BlockManagerId并调用removeBlockManager方法移除
     blockManagerIdByExecutor.get(execId).foreach(removeBlockManager)
   }
 
@@ -353,6 +367,7 @@ class BlockManagerMasterEndpoint(
   /**
    * Returns the BlockManagerId with topology information populated, if available.
    */
+  // 注册BlockManager
   private def register(
       idWithoutTopologyInfo: BlockManagerId,
       maxOnHeapMemSize: Long,
@@ -367,20 +382,30 @@ class BlockManagerMasterEndpoint(
       topologyMapper.getTopologyForHost(idWithoutTopologyInfo.host))
 
     val time = System.currentTimeMillis()
+    // 判断本地的HashMap中有没有指定的BlockManagerId，没有则进行注册
     if (!blockManagerInfo.contains(id)) {
+      // 根据BlockManager对应的ExecutorId找到对应的BlockManagerId
+      // 并做如下安全判断
+      // 因为如果blockManagerInfo Map中没有BlockManagerId
+      // 那么同步的blockManagerIdByExecutor Map里，也必须没有该BlockManagerId
+      // 如果有，则需要进行如下清理操作
       blockManagerIdByExecutor.get(id.executorId) match {
         case Some(oldId) =>
           // A block manager of the same executor already exists, so remove it (assumed dead)
           logError("Got two different block manager registrations on same executor - "
               + s" will replace old one $oldId with new one $id")
+          // 从内存缓存中移除executorId相关的blockManagerInfo
           removeExecutor(id.executorId)
         case None =>
       }
       logInfo("Registering block manager %s with %s RAM, %s".format(
         id.hostPort, Utils.bytesToString(maxOnHeapMemSize + maxOffHeapMemSize), id))
 
+      // 往blockManagerIdByExecutor map中保存一份executorId到blockManagerId的映射
       blockManagerIdByExecutor(id.executorId) = id
 
+      // 为blockManagerId创建一份BlockManagerInfo
+      // 并往blockManagerInfo map中保存一份blockManagerId到BlockManagerInfo的映射
       blockManagerInfo(id) = new BlockManagerInfo(
         id, System.currentTimeMillis(), maxOnHeapMemSize, maxOffHeapMemSize, slaveEndpoint)
     }
@@ -389,6 +414,8 @@ class BlockManagerMasterEndpoint(
     id
   }
 
+  // 如果某个BlockManager上的block发生了变化，那么都要发送updateBlockInfo
+  // 请求来BlockManagerMaster这里，进行BlockInfo的更新
   private def updateBlockInfo(
       blockManagerId: BlockManagerId,
       blockId: BlockId,
@@ -411,8 +438,13 @@ class BlockManagerMasterEndpoint(
       return true
     }
 
+    // 调用blockManagerInfo的updateBlockInfo方法跟新block信息
     blockManagerInfo(blockManagerId).updateBlockInfo(blockId, storageLevel, memSize, diskSize)
 
+    // 每一个block可能会在多个BlockManager上面
+    // 如果将StorageLevel设置成带_2的这种，那么就需要讲block replicate一份，放到其他的BlockManager上去
+    // blockLocations map保存了每个blockId对应的blockManagerId的set集合列表
+    // 所以这里会更新blockLocations中的信息，因为是用set存储了BlockManagerId，因此自动就去重了
     var locations: mutable.HashSet[BlockManagerId] = null
     if (blockLocations.containsKey(blockId)) {
       locations = blockLocations.get(blockId)
@@ -491,6 +523,7 @@ object BlockStatus {
   def empty: BlockStatus = BlockStatus(StorageLevel.NONE, memSize = 0L, diskSize = 0L)
 }
 
+// 每一个BlockManager的BlockManagerInfo相当于是这个BlockManager的元数据
 private[spark] class BlockManagerInfo(
     val blockManagerId: BlockManagerId,
     timeMs: Long,
@@ -505,6 +538,7 @@ private[spark] class BlockManagerInfo(
   private var _remainingMem: Long = maxMem
 
   // Mapping from block id to its status.
+  // BlockManagerInfo管理了每个BlockManager内部的BlockId-BlockStatus的映射
   private val _blocks = new JHashMap[BlockId, BlockStatus]
 
   // Cached blocks held by this BlockManager. This does not include broadcast blocks.
@@ -524,11 +558,13 @@ private[spark] class BlockManagerInfo(
 
     updateLastSeenMs()
 
+    // 判断内部是否有这个block
     val blockExists = _blocks.containsKey(blockId)
     var originalMemSize: Long = 0
     var originalDiskSize: Long = 0
     var originalLevel: StorageLevel = StorageLevel.NONE
 
+    // 如果该block存在
     if (blockExists) {
       // The block exists on the slave already.
       val blockStatus: BlockStatus = _blocks.get(blockId)
@@ -536,11 +572,13 @@ private[spark] class BlockManagerInfo(
       originalMemSize = blockStatus.memSize
       originalDiskSize = blockStatus.diskSize
 
+      // 判断如果storageLevel是使用内存，那么就给剩余的内存数量加上当前的内存量
       if (originalLevel.useMemory) {
         _remainingMem += originalMemSize
       }
     }
 
+    // 给block创建一份BlocakStatus，然后根据持久化级别，对相应的内存资源进行计算
     if (storageLevel.isValid) {
       /* isValid means it is either stored in-memory or on-disk.
        * The memSize here indicates the data size in or dropped from memory,
@@ -579,6 +617,8 @@ private[spark] class BlockManagerInfo(
       if (!blockId.isBroadcast && blockStatus.isCached) {
         _cachedBlocks += blockId
       }
+      // 如果storageLevel是非法的，而且之前保存过这个blockId
+      // 那么就将blockId从内存中删除
     } else if (blockExists) {
       // If isValid is not true, drop the block.
       _blocks.remove(blockId)

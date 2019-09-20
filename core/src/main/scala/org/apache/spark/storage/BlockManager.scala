@@ -117,6 +117,8 @@ private[spark] class ByteBufferBlockData(
  *
  * Note that [[initialize()]] must be called before the BlockManager is usable.
  */
+// BlockManager运行在每个节点上（driver和executor都会有一份），主要提供了在本地或者远程存取数据的功能
+// 支持内存、磁盘、堆外存储等
 private[spark] class BlockManager(
     executorId: String,
     rpcEnv: RpcEnv,
@@ -230,6 +232,7 @@ private[spark] class BlockManager(
    * service if configured.
    */
   def initialize(appId: String): Unit = {
+    // 首先初始化用于进行远程block数据传输的blockTransferService
     blockTransferService.init(this)
     shuffleClient.init(appId)
 
@@ -242,9 +245,14 @@ private[spark] class BlockManager(
       ret
     }
 
+    // 为当前这个BlockManager创建一个唯一的BlockManagerId
+    // 传入参数有executorId（每个BlockManager都关联一个Executor）
+    // blockTransferService.hostName以及blockTransferService.port
+    // 从BlockManagerId的初始化可以看出一个BlockManager是通过节点上的executor来进行唯一标识的
     val id =
       BlockManagerId(executorId, blockTransferService.hostName, blockTransferService.port, None)
 
+    // 发送消息RegisterBlockManager到BlockManagerMasterEndpoint进行BlockManager的注册
     val idFromMaster = master.registerBlockManager(
       id,
       maxOnHeapMemory,
