@@ -118,7 +118,7 @@ private[spark] class ByteBufferBlockData(
  * Note that [[initialize()]] must be called before the BlockManager is usable.
  */
 // BlockManager运行在每个节点上（driver和executor都会有一份），主要提供了在本地或者远程存取数据的功能
-// 支持内存、磁盘、堆外存储等
+// 支持内存、磁盘、堆外存储等，initialize方法进行初始化
 private[spark] class BlockManager(
     executorId: String,
     rpcEnv: RpcEnv,

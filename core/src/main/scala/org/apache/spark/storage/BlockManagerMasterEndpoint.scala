@@ -37,7 +37,7 @@ import org.apache.spark.util.{ThreadUtils, Utils}
  * BlockManagerMasterEndpoint is an [[ThreadSafeRpcEndpoint]] on the master node to track statuses
  * of all slaves' block managers.
  */
-// BlockManagerMasterEndpoint就是负责维护各个executor的BlockManager的元数据
+// BlockManagerMasterEndpoint负责维护各个executor的BlockManager的元数据、
 // BlockManagerInfo、BlockStatus等信息
 private[spark]
 class BlockManagerMasterEndpoint(
@@ -48,9 +48,10 @@ class BlockManagerMasterEndpoint(
   extends ThreadSafeRpcEndpoint with Logging {
 
   // Mapping from block manager id to the block manager's information.
-  // 这个Map映射了block manager的id到block manager的info
-  // BlockManagerId -- BlockManagerInfo的映射
+  // 这个Map存放了BlockManagerId -- BlockManagerInfo的映射
   // BlockManagerMaster要维护每个BlockManager的BlockManagerInfo
+  // blockManagerInfo包含了Executor的内存使用情况，数据块的使用情况
+  // 已被缓存的数据块和Executor终端点的引用，通过该引用可以向该Executor发送消息
   private val blockManagerInfo = new mutable.HashMap[BlockManagerId, BlockManagerInfo]
 
   // Mapping from executor ID to block manager ID.
@@ -59,6 +60,7 @@ class BlockManagerMasterEndpoint(
   private val blockManagerIdByExecutor = new mutable.HashMap[String, BlockManagerId]
 
   // Mapping from block id to the set of block managers that have the block.
+  // 存放了BlockId和BlockManagerId对应的列表，原因在于一个数据块可能存储多个
   private val blockLocations = new JHashMap[BlockId, mutable.HashSet[BlockManagerId]]
 
   private val askThreadPool =
@@ -80,7 +82,7 @@ class BlockManagerMasterEndpoint(
   logInfo("BlockManagerMasterEndpoint up")
 
   override def receiveAndReply(context: RpcCallContext): PartialFunction[Any, Unit] = {
-    // BlockManager启动之后想BlockManagerMaster进行注册
+    // BlockManager启动之后向BlockManagerMaster进行注册
     case RegisterBlockManager(blockManagerId, maxOnHeapMemSize, maxOffHeapMemSize, slaveEndpoint) =>
       context.reply(register(blockManagerId, maxOnHeapMemSize, maxOffHeapMemSize, slaveEndpoint))
 
@@ -382,13 +384,13 @@ class BlockManagerMasterEndpoint(
       topologyMapper.getTopologyForHost(idWithoutTopologyInfo.host))
 
     val time = System.currentTimeMillis()
-    // 判断本地的HashMap中有没有指定的BlockManagerId，没有则进行注册
+    // 判断本地的HashMap中有没有指定的BlockManagerId，如果没有说明未注册
     if (!blockManagerInfo.contains(id)) {
-      // 根据BlockManager对应的ExecutorId找到对应的BlockManagerId
-      // 并做如下安全判断
-      // 因为如果blockManagerInfo Map中没有BlockManagerId
-      // 那么同步的blockManagerIdByExecutor Map里，也必须没有该BlockManagerId
-      // 如果有，则需要进行如下清理操作
+      // 如果blockManagerInfo Map中没有BlockManagerId
+      // 那么安全检查同步的blockManagerIdByExecutor Map里，也必须没有该BlockManagerId
+      // 进入该处说明blockManagerInfo Map中没有BlockManagerId，需要移除BlockManagerId
+
+      // 根据BlockManager对应的ExecutorId（BlockManagerId包含有成员变量executorID）找到对应的BlockManagerId
       blockManagerIdByExecutor.get(id.executorId) match {
         case Some(oldId) =>
           // A block manager of the same executor already exists, so remove it (assumed dead)
@@ -438,11 +440,11 @@ class BlockManagerMasterEndpoint(
       return true
     }
 
-    // 调用blockManagerInfo的updateBlockInfo方法跟新block信息
+    // 调用blockManagerInfo的updateBlockInfo方法更新block信息
     blockManagerInfo(blockManagerId).updateBlockInfo(blockId, storageLevel, memSize, diskSize)
 
     // 每一个block可能会在多个BlockManager上面
-    // 如果将StorageLevel设置成带_2的这种，那么就需要讲block replicate一份，放到其他的BlockManager上去
+    // 如果将StorageLevel设置成带_2的这种，那么就需要将block replicate一份，放到其他的BlockManager上去
     // blockLocations map保存了每个blockId对应的blockManagerId的set集合列表
     // 所以这里会更新blockLocations中的信息，因为是用set存储了BlockManagerId，因此自动就去重了
     var locations: mutable.HashSet[BlockManagerId] = null

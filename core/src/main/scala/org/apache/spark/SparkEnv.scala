@@ -336,6 +336,10 @@ object SparkEnv extends Logging {
       conf.get(BLOCK_MANAGER_PORT)
     }
 
+    // 创建远程数据传输服务，使用Netty方式
+    // 从BlockManager读取数据，如果能从本地读取，那么就利用DiskStore或MemoryStore从本地读取数据
+    // 如果没有本地数据，那么会用ConnectionManager于有数据的BlockManager建立连接
+    // 然后使用blockTransferService对远程其他节点的BlockManager数据的读取
     val blockTransferService =
       new NettyBlockTransferService(conf, securityManager, bindAddress, advertiseAddress,
         blockManagerPort, numUsableCores)
