@@ -61,6 +61,7 @@ class BlockManagerMasterEndpoint(
 
   // Mapping from block id to the set of block managers that have the block.
   // 存放了BlockId和BlockManagerId对应的列表，原因在于一个数据块可能存储多个
+  // 可以有多个副本，保存在多个Executor中
   private val blockLocations = new JHashMap[BlockId, mutable.HashSet[BlockManagerId]]
 
   private val askThreadPool =
@@ -91,6 +92,9 @@ class BlockManagerMasterEndpoint(
       context.reply(updateBlockInfo(blockManagerId, blockId, storageLevel, deserializedSize, size))
       listenerBus.post(SparkListenerBlockUpdated(BlockUpdatedInfo(_updateBlockInfo)))
 
+      // 获取RDD执行首选位置等操作需要根据数据块的编号查询数据块所处的位置
+      // 处理接收到的GetLocations消息，通过对元数据的查询获取数据块的位置信息
+      // getLocations方法通过数据块编号BlockId获取所有的BlockManagerId序列
     case GetLocations(blockId) =>
       context.reply(getLocations(blockId))
 
@@ -377,6 +381,8 @@ class BlockManagerMasterEndpoint(
       slaveEndpoint: RpcEndpointRef): BlockManagerId = {
     // the dummy id is not expected to contain the topology information.
     // we get that info here and respond back with a more fleshed out block manager id
+    // 利用从Executor上传过来的BlockManagerId信息重新封装BlockManagerId，并且
+    // 之前传过来没有拓扑信息，这次直接将拓扑信息也封装进去，得到一个更完整的BlockManagerId
     val id = BlockManagerId(
       idWithoutTopologyInfo.executorId,
       idWithoutTopologyInfo.host,
@@ -384,13 +390,14 @@ class BlockManagerMasterEndpoint(
       topologyMapper.getTopologyForHost(idWithoutTopologyInfo.host))
 
     val time = System.currentTimeMillis()
-    // 判断本地的HashMap中有没有指定的BlockManagerId，如果没有说明未注册
+    // 判断本地的HashMap中有没有指定的BlockManagerId，如果没有说明未注册，向下执行注册
     if (!blockManagerInfo.contains(id)) {
       // 如果blockManagerInfo Map中没有BlockManagerId
       // 那么安全检查同步的blockManagerIdByExecutor Map里，也必须没有该BlockManagerId
       // 进入该处说明blockManagerInfo Map中没有BlockManagerId，需要移除BlockManagerId
 
       // 根据BlockManager对应的ExecutorId（BlockManagerId包含有成员变量executorID）找到对应的BlockManagerId
+      // 如果匹配到则移除以前的注册过的旧数据
       blockManagerIdByExecutor.get(id.executorId) match {
         case Some(oldId) =>
           // A block manager of the same executor already exists, so remove it (assumed dead)
@@ -469,6 +476,7 @@ class BlockManagerMasterEndpoint(
   }
 
   private def getLocations(blockId: BlockId): Seq[BlockManagerId] = {
+    // 根据blockId判断是否包含该数据块，如果包含，则返回其对应的BlockManagerId序列
     if (blockLocations.containsKey(blockId)) blockLocations.get(blockId).toSeq else Seq.empty
   }
 

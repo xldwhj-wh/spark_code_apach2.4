@@ -286,7 +286,8 @@ abstract class RDD[T: ClassTag](
       // 如果存在存储级别，尝试读取内存数据进行迭代计算
       getOrCompute(split, context)
     } else {
-      // 进行RDD partition的计算
+      // 如果不存在存储级别，则直接读取数据进行RDD partition迭代计算
+      // 或者读取检查点结果进行迭代计算
       computeOrReadCheckpoint(split, context)
     }
   }
@@ -332,9 +333,11 @@ abstract class RDD[T: ClassTag](
    * Gets or computes an RDD partition. Used by RDD.iterator() when an RDD is cached.
    */
   private[spark] def getOrCompute(partition: Partition, context: TaskContext): Iterator[T] = {
+    // 通过RDD的编号和partition的序号获取Block的编号
     val blockId = RDDBlockId(id, partition.index)
     var readCachedBlock = true
     // This method is called on executors, so we need call SparkEnv.get instead of sc.env.
+    // 根据数据块block的编号先读取数据，然后在更新数据，这里是读写数据的入口
     SparkEnv.get.blockManager.getOrElseUpdate(blockId, storageLevel, elementClassTag, () => {
       readCachedBlock = false
       computeOrReadCheckpoint(partition, context)

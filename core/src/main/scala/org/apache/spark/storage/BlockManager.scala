@@ -117,7 +117,8 @@ private[spark] class ByteBufferBlockData(
  *
  * Note that [[initialize()]] must be called before the BlockManager is usable.
  */
-// BlockManager运行在每个节点上（driver和executor都会有一份），主要提供了在本地或者远程存取数据的功能
+// BlockManager运行在每个节点上（driver和executor都会有一份）
+// 主要提供了在本地或者远程 存取 数据的功能
 // 支持内存、磁盘、堆外存储等，initialize方法进行初始化
 private[spark] class BlockManager(
     executorId: String,
@@ -233,9 +234,13 @@ private[spark] class BlockManager(
    */
   def initialize(appId: String): Unit = {
     // 首先初始化用于进行远程block数据传输的blockTransferService
+    // 其实是它的子类NettyBlockTransferService的init方法
+    // 通过该方法提供的传输服务可以从不同的节点上拉取Block数据
+    // 旧版本中使用BlockManagerWorker来进行数据传输
     blockTransferService.init(this)
     shuffleClient.init(appId)
 
+    // 设置block的复制分片策略，由spark.storage.replication.policy指定
     blockReplicationPolicy = {
       val priorityClass = conf.get(
         "spark.storage.replication.policy", classOf[RandomBlockReplicationPolicy].getName)
@@ -246,13 +251,16 @@ private[spark] class BlockManager(
     }
 
     // 为当前这个BlockManager创建一个唯一的BlockManagerId
+    // 根据给定参数为对应的Executor封装一个BlockManagerId对象（块存储的唯一标识）
     // 传入参数有executorId（每个BlockManager都关联一个Executor）
-    // blockTransferService.hostName以及blockTransferService.port
+    // blockTransferService.hostName(传输Block数据的服务的主机名)
+    // blockTransferService.port(传输Block数据的服务的主机名)
     // 从BlockManagerId的初始化可以看出一个BlockManager是通过节点上的executor来进行唯一标识的
     val id =
       BlockManagerId(executorId, blockTransferService.hostName, blockTransferService.port, None)
 
-    // 发送消息RegisterBlockManager到BlockManagerMasterEndpoint进行BlockManager的注册
+    // 调用BlockManagerMaster的registerBlockManager方法
+    // 到Driver上的BlockManagerMasterEndpoint引用进行BlockManager的注册
     val idFromMaster = master.registerBlockManager(
       id,
       maxOnHeapMemory,
@@ -596,21 +604,26 @@ private[spark] class BlockManager(
         val level = info.level
         logDebug(s"Level for block $blockId is $level")
         val taskAttemptId = Option(TaskContext.get()).map(_.taskAttemptId())
+        // 使用内存存储级别，并且数据存储在内存的情况
         if (level.useMemory && memoryStore.contains(blockId)) {
           val iter: Iterator[Any] = if (level.deserialized) {
+            // 如果存储时使用反序列化，则直接读取内存中的数据
             memoryStore.getValues(blockId).get
           } else {
+            // 如果存储时未使用反序列化，则内存中的数据需做反序列化处理
             serializerManager.dataDeserializeStream(
               blockId, memoryStore.getBytes(blockId).get.toInputStream())(info.classTag)
           }
           // We need to capture the current taskId in case the iterator completion is triggered
           // from a different thread which does not have TaskContext set; see SPARK-18406 for
           // discussion.
+          // 数据读取完成后，返回数据以及数据块的大小、读取方法等信息
           val ci = CompletionIterator[Any, Iterator[Any]](iter, {
             releaseLock(blockId, taskAttemptId)
           })
           Some(new BlockResult(ci, DataReadMethod.Memory, info.size))
         } else if (level.useDisk && diskStore.contains(blockId)) {
+          //
           val diskData = diskStore.getBytes(blockId)
           val iterToReturn: Iterator[Any] = {
             if (level.deserialized) {
@@ -660,6 +673,7 @@ private[spark] class BlockManager(
    * Must be called while holding a read lock on the block.
    * Releases the read lock upon exception; keeps the read lock upon successful return.
    */
+  // 从本地获取数据
   private def doGetLocalBytes(blockId: BlockId, info: BlockInfo): BlockData = {
     val level = info.level
     logDebug(s"Level for block $blockId is $level")
