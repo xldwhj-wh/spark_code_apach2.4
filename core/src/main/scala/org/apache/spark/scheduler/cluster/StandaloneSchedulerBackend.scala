@@ -58,6 +58,8 @@ private[spark] class StandaloneSchedulerBackend(
   private val totalExpectedCores = maxCores.getOrElse(0)
 
   override def start() {
+    // 调用父类CoarseGrainedSchedulerBackend中的start方法
+    // 使用createDriverEndpointRef方法创建DriverEndpoint这个内部类
     super.start()
 
     // SPARK-21159. The scheduler backend should only try to connect to the launcher when in client
@@ -119,6 +121,7 @@ private[spark] class StandaloneSchedulerBackend(
       webUrl, sc.eventLogDir, sc.eventLogCodec, coresPerExecutor, initialExecutorLimit)
     // 创建StandaloneAppClient并调用client的start方法进行启动
     client = new StandaloneAppClient(sc.env.rpcEnv, masters, appDesc, this, conf)
+    // 在StandaloneAppClient类的start方法中实例化 ClientEndpoint(rpcEnv)这个内部类
     client.start()
     launcherBackend.setState(SparkAppHandle.State.SUBMITTED)
     waitForRegistration()
@@ -159,6 +162,7 @@ private[spark] class StandaloneSchedulerBackend(
 
   override def executorAdded(fullId: String, workerId: String, hostPort: String, cores: Int,
     memory: Int) {
+    // 到此调用logInfo方法，executor形式上注册成功
     logInfo("Granted executor ID %s on hostPort %s with %d core(s), %s RAM".format(
       fullId, hostPort, cores, Utils.megabytesToString(memory)))
   }

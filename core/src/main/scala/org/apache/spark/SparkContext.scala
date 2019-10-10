@@ -361,7 +361,7 @@ class SparkContext(config: SparkConf) extends Logging {
   }
 
 
-  // 代码块，每次构造sparkcontext时都会执行
+  // 代码块，每次构造SparkContext时都会执行
   try {
     _conf = config.clone()
     _conf.validateSettings()
@@ -2759,7 +2759,7 @@ object SparkContext extends Logging {
         scheduler.initialize(backend)
         (backend, scheduler)
 
-        // spark的standalone模式
+        // spark的 Standalone 模式
       case SPARK_REGEX(sparkUrl) =>
         val scheduler = new TaskSchedulerImpl(sc)
         val masterUrls = sparkUrl.split(",").map("spark://" + _)

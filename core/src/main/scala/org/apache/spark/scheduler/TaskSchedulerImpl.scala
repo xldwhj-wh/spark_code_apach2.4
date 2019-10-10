@@ -199,6 +199,7 @@ private[spark] class TaskSchedulerImpl(
     val tasks = taskSet.tasks
     logInfo("Adding task set " + taskSet.id + " with " + tasks.length + " tasks")
     this.synchronized {
+      // 创建任务集的管理器，用于管理这个任务集的生命周期
       val manager = createTaskSetManager(taskSet, maxTaskFailures)
       val stage = taskSet.stageId
       val stageTaskSets =

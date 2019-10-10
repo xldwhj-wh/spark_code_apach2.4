@@ -67,6 +67,7 @@ private[spark] class CoarseGrainedExecutorBackend(
       driver = Some(ref)
       // 启动起来之后向Driver发送RegisterExecutor消息
       // 反向向Driver注册（CoarseGrainedSchedulerBackend）
+      // 实际上是向通信实体DriverEndpoint发送RegisterExecutor消息注册给Driver
       ref.ask[Boolean](RegisterExecutor(executorId, self, hostname, cores, extractLogUrls))
     }(ThreadUtils.sameThread).onComplete {
       // This is a very fast action so we can use "ThreadUtils.sameThread"
@@ -90,6 +91,7 @@ private[spark] class CoarseGrainedExecutorBackend(
     case RegisteredExecutor =>
       logInfo("Successfully registered with driver")
       try {
+        // executor内部有一个后台线程池threadPool，用于处理任务task
         executor = new Executor(executorId, hostname, env, userClassPath, isLocal = false)
       } catch {
         case NonFatal(e) =>
@@ -99,7 +101,7 @@ private[spark] class CoarseGrainedExecutorBackend(
     case RegisterExecutorFailed(message) =>
       exitExecutor(1, "Slave registration failed: " + message)
 
-      // 接收来自SchedulerBackend的LaunchTask消息启动Task
+      // 接收来自SchedulerBackend（CoarseGrainedSchedulerBackend）的LaunchTask消息启动Task
     case LaunchTask(data) =>
       if (executor == null) {
         exitExecutor(1, "Received LaunchTask command but executor was null")

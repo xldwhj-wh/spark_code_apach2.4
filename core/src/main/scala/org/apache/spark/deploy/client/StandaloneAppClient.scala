@@ -176,6 +176,7 @@ private[spark] class StandaloneAppClient(
         val fullId = appId + "/" + id
         logInfo("Executor added: %s on %s (%s) with %d core(s)".format(fullId, workerId, hostPort,
           cores))
+        // 调用StandaloneSchedulerBackend的executorAdded方法
         listener.executorAdded(fullId, workerId, hostPort, cores, memory)
 
       case ExecutorUpdated(id, state, message, exitStatus, workerLost) =>
@@ -277,6 +278,9 @@ private[spark] class StandaloneAppClient(
 
   def start() {
     // Just launch an rpcEndpoint; it will call back into the listener.
+    // ClientEndpoint是个消息通讯体，在实例化完成后会自动执行其onstart()方法,
+    // onstart()内部会发消息给master来注册app；masterRef.send(RegisterApplication(appDescription, self))
+    // 需要注意的是:这里的appDescription包含了app的具体信息，包括command信息；这里的self是ClientEndpoint本身
     // 调用NettyRpcEnv的setupEndpoint方法
     endpoint.set(rpcEnv.setupEndpoint("AppClient", new ClientEndpoint(rpcEnv)))
   }

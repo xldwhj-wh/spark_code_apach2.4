@@ -320,7 +320,7 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val rpcEnv: Rp
           logDebug(s"Launching task ${task.taskId} on executor id: ${task.executorId} hostname: " +
             s"${executorData.executorHost}.")
 
-          // 向ExecutorBackend发送LaunchTask消息，启动task
+          // 向ExecutorBackend（CoarseGrainedExecutorBackend）发送LaunchTask消息，启动task
           executorData.executorEndpoint.send(LaunchTask(new SerializableBuffer(serializedTask)))
         }
       }
@@ -401,6 +401,7 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val rpcEnv: Rp
     }
 
     // TODO (prashant) send conf instead of properties
+    // 创建DriverEndpoint内部类消息实体
     driverEndpoint = createDriverEndpointRef(properties)
   }
 

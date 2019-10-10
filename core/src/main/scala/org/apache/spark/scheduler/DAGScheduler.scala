@@ -1250,6 +1250,7 @@ private[spark] class DAGScheduler(
       val serializedTaskMetrics = closureSerializer.serialize(stage.latestInfo.taskMetrics).array()
       // 根据stage的类型创建不同的task（ShuffleMapTask或者ResultTask）
       stage match {
+          // 对于ShuffleMapStage创建ShuffleMapTask
         case stage: ShuffleMapStage =>
           stage.pendingPartitions.clear()
           partitionsToCompute.map { id =>
@@ -1263,6 +1264,7 @@ private[spark] class DAGScheduler(
               Option(sc.applicationId), sc.applicationAttemptId, stage.rdd.isBarrier())
           }
 
+          // 对于ResultStage，创建ResultTask
         case stage: ResultStage =>
           partitionsToCompute.map { id =>
             val p: Int = stage.partitions(id)
@@ -1284,13 +1286,14 @@ private[spark] class DAGScheduler(
     if (tasks.size > 0) {
       logInfo(s"Submitting ${tasks.size} missing tasks from $stage (${stage.rdd}) (first 15 " +
         s"tasks are for partitions ${tasks.take(15).map(_.partitionId)})")
-      // 最后针对stage的task，创建TaskSet
+      // 最后针对stage的tasks，创建TaskSet
       // 并调用taskScheduler的submitTasks方法提交TaskSet
       taskScheduler.submitTasks(new TaskSet(
         tasks.toArray, stage.id, stage.latestInfo.attemptNumber, jobId, properties))
     } else {
       // Because we posted SparkListenerStageSubmitted earlier, we should mark
       // the stage as completed here in case there are no tasks to run
+      // 如果调度阶段中不存在任务标记，则表示该调度阶段已经完成
       markStageAsFinished(stage, None)
 
       stage match {
@@ -2089,7 +2092,7 @@ private[spark] class DAGScheduler(
     // 寻找当前rdd的partition是否checkpoint了
     val rddPrefs = rdd.preferredLocations(rdd.partitions(partition)).toList
     if (rddPrefs.nonEmpty) {
-      // 其次返回checkpoint
+      // 如果没被缓存，其次返回checkpoint
       return rddPrefs.map(TaskLocation(_))
     }
 
@@ -2097,7 +2100,7 @@ private[spark] class DAGScheduler(
     // that has any placement preferences. Ideally we would choose based on transfer sizes,
     // but this will do for now.
     // 如果当前rdd没有被缓存或者checkpoint
-    // 那么最后递归调用自己去寻找rdd的父rdd，
+    // 那么最后递归调用去寻找rdd的父rdd，
     // 看对应的依赖关系为NarrowDependency的父rdd是否缓存或者checkpoint
     // 如果父rdd存在最佳位置，则返回父rdd的最佳位置
     rdd.dependencies.foreach {

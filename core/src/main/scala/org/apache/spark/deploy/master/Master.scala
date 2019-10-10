@@ -266,7 +266,6 @@ private[deploy] class Master(
 
     case RegisterApplication(description, driver) =>
       // TODO Prevent repeated registrations from some driver
-
       // 如果master的状态是standby，也就是当前这个接收消息的master是standby master，不是active master
       // 那么Application的注册请求什么都不做
       if (state == RecoveryState.STANDBY) {
@@ -1004,7 +1003,10 @@ private[deploy] class Master(
     // 向worker发送LaunchExecutor消息
     worker.endpoint.send(LaunchExecutor(masterUrl,
       exec.application.id, exec.id, exec.application.desc, exec.cores, exec.memory))
+    // Executor启动成功后回反向注册
     // 向driver（StandaloneAppClient）发送ExecutorAdded消息
+    // 实际上是发送给ClientEndpoint这个消息通讯体
+    // ClientEndpoint在StandaloneAppClient的start方法中初始化
     exec.application.driver.send(
       ExecutorAdded(exec.id, worker.id, worker.hostPort, exec.cores, exec.memory))
   }
