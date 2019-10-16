@@ -48,7 +48,9 @@ private[spark] class SortShuffleWriter[K, V, C](
   private val writeMetrics = context.taskMetrics().shuffleWriteMetrics
 
   /** Write a bunch of records to this task's output */
+  // 将计算出的新的RDD的partition数据，写入本地磁盘
   override def write(records: Iterator[Product2[K, V]]): Unit = {
+    // 是否需要在map端本地聚合
     sorter = if (dep.mapSideCombine) {
       new ExternalSorter[K, V, C](
         context, dep.aggregator, Some(dep.partitioner), dep.keyOrdering, dep.serializer)
