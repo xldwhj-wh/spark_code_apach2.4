@@ -175,6 +175,7 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val rpcEnv: Rp
         // 如果未被注册，则将其存入executorDataMap中
         // 如果已被注册，则向CoarseGrainedExecutorBackend发送RegisterExecutorFailed消息
         // 提示重复注册
+        // executorDataMap集合保存Executor信息
         if (executorDataMap.contains(executorId)) {
           executorRef.send(RegisterExecutorFailed("Duplicate executor ID: " + executorId))
           context.reply(true)
@@ -402,6 +403,7 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val rpcEnv: Rp
 
     // TODO (prashant) send conf instead of properties
     // 创建DriverEndpoint内部类消息实体
+    // DriverEndpoint用于提交task到Executor，接收Executor返回的计算结果
     driverEndpoint = createDriverEndpointRef(properties)
   }
 

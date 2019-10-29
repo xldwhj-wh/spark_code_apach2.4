@@ -782,7 +782,7 @@ private[deploy] class Master(
     val memoryPerExecutor = app.desc.memoryPerExecutorMB
     // 可用worker的数量
     val numUsable = usableWorkers.length
-    // 给每个worker分配的核数
+    // 每个worker分配出去的核数
     val assignedCores = new Array[Int](numUsable) // Number of cores to give to each worker
     // 每个Worker上分配的Executor的个数的集合
     val assignedExecutors = new Array[Int](numUsable) // Number of new executors on each worker
@@ -800,8 +800,8 @@ private[deploy] class Master(
 
       // If we allow multiple executors per worker, then we can always launch new executors.
       // Otherwise, if there is already an executor on this worker, just give it more cores.
-      // 在这个Worker上没有启动Executor，或者一个Executor上需要启动多个cores。
-      // oneExecutorPerWorker=false,则说明一个Executor上需要启动多个cores
+      // 在这个Worker上没有启动Executor，或者一个Executor上需要多个cores。
+      // oneExecutorPerWorker=false,则说明一个Executor上需要多个cores
       val launchingNewExecutor = !oneExecutorPerWorker || assignedExecutors(pos) == 0
       if (launchingNewExecutor) {
         // worker已经分配的memory，该worker上启动的Executors个数 * 每个Executor的内存
@@ -852,7 +852,7 @@ private[deploy] class Master(
           // many workers as possible. If we are not spreading out, then we should keep
           // scheduling executors on this worker until we use all of its resources.
           // Otherwise, just move on to the next worker.
-          // spreadOutApps：尽量分配Executors 到最多的Worker上；
+          // spreadOutApps：spreadOutApps为true，尽量分配Executors 到最多的Worker上；
           // 非spreadOutApps ：紧着一个Worker分配Executors，直到这个Worker的资源被用尽。
           if (spreadOutApps) {
             keepScheduling = false
@@ -862,7 +862,7 @@ private[deploy] class Master(
       // 每一次循环，都进行一次过滤，过滤出来仍然可以提交一个Executor的workers
       freeWorkers = freeWorkers.filter(canLaunchExecutor)
     }
-    // 返回，每个Worker所需要调用的cores的集合
+    // 返回，每个Worker所需要分配的cores的集合
     assignedCores
   }
 
@@ -898,16 +898,16 @@ private[deploy] class Master(
             worker.coresFree >= coresPerExecutor)
           .sortBy(_.coresFree).reverse
         // Application的调度算法有两种，一种是spreadOutApps，另一种是非spreadOutApps
-        // spreadOutApps通过配置文件spark.deploy.spreadOut定义，默认为ture
+        // spreadOutApps通过配置文件spark.deploy.spreadOut定义，默认为true
         // assignedCores为每个Worker所需要调用的cores的array集合
         // 调用scheduleExecutorsOnWorkers方法进行Executor资源分配
         val assignedCores = scheduleExecutorsOnWorkers(app, usableWorkers, spreadOutApps)
 
         // Now that we've decided how many cores to allocate on each worker, let's allocate them
         // 通过上述过程，我们明确了每个worker分配多少cores给applicatuon，
-        // 循环前边判断后分配了core的worker，该出分配core给application
+        // 循环前边操作后分配了core的worker，分配core给application
         for (pos <- 0 until usableWorkers.length if assignedCores(pos) > 0) {
-          // 通过调用allocateWorkerResourceToExecutors方法分配worker的cores
+          // 通过调用allocateWorkerResourceToExecutors方法分配worker的cores给application
           allocateWorkerResourceToExecutors(
             app, assignedCores(pos), app.desc.coresPerExecutor, usableWorkers(pos))
         }
@@ -934,9 +934,11 @@ private[deploy] class Master(
     // 否则的话，我们仅仅启动一个Executor，它占用这个Worker的所有被分配出来的cores
     val numExecutors = coresPerExecutor.map { assignedCores / _ }.getOrElse(1)
     // 每个Executor所拥有的cores，等于coresPerExecutor的值或者分配的全部cores
+    // spreadOutApps模式下等于每个Executor需要的coresPerExecutor
+    // 非spreadOutApps模式下等于分配给Executor的所有cores
     val coresToAssign = coresPerExecutor.getOrElse(assignedCores)
     for (i <- 1 to numExecutors) {
-      // 添加Executor的信息 返回这个executor，调用ApplicationInfo的addExecutor方法
+      // 添加Executor的信息,调用ApplicationInfo的addExecutor方法
       val exec = app.addExecutor(worker, coresToAssign)
       // 在Worker上注册启动Executor
       launchExecutor(worker, exec)

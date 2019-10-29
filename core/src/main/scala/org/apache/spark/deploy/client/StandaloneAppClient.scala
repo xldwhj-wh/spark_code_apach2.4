@@ -279,9 +279,10 @@ private[spark] class StandaloneAppClient(
   def start() {
     // Just launch an rpcEndpoint; it will call back into the listener.
     // ClientEndpoint是个消息通讯体，在实例化完成后会自动执行其onstart()方法,
-    // onstart()内部会发消息给master来注册app；masterRef.send(RegisterApplication(appDescription, self))
+    // onStart()内部会发消息给master来注册app；masterRef.send(RegisterApplication(appDescription, self))
     // 需要注意的是:这里的appDescription包含了app的具体信息，包括command信息；这里的self是ClientEndpoint本身
     // 调用NettyRpcEnv的setupEndpoint方法
+    // 最终ClientEndpoint的生命周期方法onStart中会和Master通信，注册APP
     endpoint.set(rpcEnv.setupEndpoint("AppClient", new ClientEndpoint(rpcEnv)))
   }
 

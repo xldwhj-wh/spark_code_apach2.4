@@ -114,7 +114,7 @@ private[spark] class StandaloneSchedulerBackend(
         None
       }
     // 注意此处传入的command变量，这个command就是CoarseGrainedExecutorBackend这个类
-    // Application在注册时把这个command也提交给了Master
+    // Application注册时把这个command也提交给了Master
     // master发指令给Worker去启动Excutor所在的进程的时候加载main方法所在的入口类
     // 该入口类就是command中的CoarseGrainedExcutorBackend;
     val appDesc = ApplicationDescription(sc.appName, maxCores, sc.executorMemory, command,

@@ -147,7 +147,7 @@ private[deploy] class ExecutorRunner(
   private def fetchAndRunExecutor() {
     try {
       // Launch the process
-      // 此处使用appDesc.command，该值由standaloneschedulerBackend类中构造appDesc传入
+      // 此处使用appDesc.command，该值由standAloneSchedulerBackend类中构造appDesc传入
       // 其值为org.apache.spark.executor.CoarseGrainedExecutorBackend
       // 并随着Application注册到Master，启动Executor时会加载该类的main方法作为入口
       val subsOpts = appDesc.command.javaOpts.map {
