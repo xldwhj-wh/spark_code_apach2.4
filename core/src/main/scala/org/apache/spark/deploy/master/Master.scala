@@ -301,6 +301,7 @@ private[deploy] class Master(
             appInfo.resetRetryCount()
           }
 
+          // 向driver发送ExecutorUpdated消息
           exec.application.driver.send(ExecutorUpdated(execId, state, message, exitStatus, false))
 
           if (ExecutorState.isFinished(state)) {
@@ -817,9 +818,8 @@ private[deploy] class Master(
       } else {
         // We're adding cores to an existing executor, so no need
         // to check memory and executor limits
-        // 由于一个worker启动一个executor
-        // 后续分配我们将worker分配的cores添加到该executor，
-        // 并且不需要检查内存对executor的限制
+        // 由于一个worker启动一个executor，assignedExecutors != 0 说明此时该worker上已启动一个executor
+        // 后续分配我们将worker分配的cores添加到该executor，所以不需要检查内存对executor的限制
         keepScheduling && enoughCores
       }
     }
@@ -883,14 +883,13 @@ private[deploy] class Master(
       val coresPerExecutor = app.desc.coresPerExecutor.getOrElse(1)
       // If the cores left is less than the coresPerExecutor,the cores left will not be allocated
       // 调度的Application剩余需要的core数量大于等于coresPerExecutor时进行调度
-      // 即分配Executor之前要判断应用程序是否還需要分配Core如果不需要則不会為应用程序分配Executor
-      // 如果调度的Application剩余需要的core数量小于executor需要的core数量，
-      // 则Applicatioon剩余的core将不会被分配。
+      // 即分配Executor之前要判断应用程序是否还需要分配Core如果不需要则不会为应用程序分配Executor
+      // 如果调度的Application剩余需要的core数量小于executor需要的core数量，则Applicatioon剩余的core将不会被分配。
       // coresLeft=当前app申请的maxcpus - granted的cpus，
       // maxcpus由参数spark.cores.max配置文件设置决定
       if (app.coresLeft >= coresPerExecutor) {
         // Filter out workers that don't have enough resources to launch an executor
-        // 过滤掉存活但是剩余core/内存不足以启动一个Executor的worker
+        // 过滤掉存活但是剩余 core/内存 不足以启动一个Executor的worker
         // （即worker的memoryFree小于memoryPerExecutorMB或者coresFree小于coresPerExecutor）
         // 剩余的worker参与Application的Executor资源分配，即usableWorkers，然后按照coresFree倒序排序
         val usableWorkers = workers.toArray.filter(_.state == WorkerState.ALIVE)
@@ -931,7 +930,7 @@ private[deploy] class Master(
     // to this worker evenly among the executors with no remainder.
     // Otherwise, we launch a single executor that grabs all the assignedCores on this worker.
     // 如果每一个Executor所需的core的数量被配置(coresPerExecutor配置有值)，我们均匀的分配这个worker的cores给每一个Executor。
-    // 否则的话，我们仅仅启动一个Executor，它占用这个Worker的所有被分配出来的cores
+    // 否则的话，我们仅仅在该worker上启动一个Executor，它占用这个Worker的所有被分配出来的cores
     val numExecutors = coresPerExecutor.map { assignedCores / _ }.getOrElse(1)
     // 每个Executor所拥有的cores，等于coresPerExecutor的值或者分配的全部cores
     // spreadOutApps模式下等于每个Executor需要的coresPerExecutor

@@ -99,6 +99,7 @@ private[spark] class StandaloneAppClient(
     private def tryRegisterAllMasters(): Array[JFuture[_]] = {
       // 构建Runnable线程遍历master节点进行注册
       for (masterAddress <- masterRpcAddresses) yield {
+        // 向线程池中启动注册线程，当线程读取到应用注册成功标识registered=true时退出注册线程
         registerMasterThreadPool.submit(new Runnable {
           override def run(): Unit = try {
             if (registered.get) {
@@ -278,11 +279,11 @@ private[spark] class StandaloneAppClient(
 
   def start() {
     // Just launch an rpcEndpoint; it will call back into the listener.
-    // ClientEndpoint是个消息通讯体，在实例化完成后会自动执行其onstart()方法,
+    // ClientEndpoint是个消息通讯体，在实例化完成后会自动执行其onStart()方法,
     // onStart()内部会发消息给master来注册app；masterRef.send(RegisterApplication(appDescription, self))
     // 需要注意的是:这里的appDescription包含了app的具体信息，包括command信息；这里的self是ClientEndpoint本身
-    // 调用NettyRpcEnv的setupEndpoint方法
     // 最终ClientEndpoint的生命周期方法onStart中会和Master通信，注册APP
+    // 调用到onStart的中间流程可进入NettyRpcEnv的setupEndpoint方法进行查看
     endpoint.set(rpcEnv.setupEndpoint("AppClient", new ClientEndpoint(rpcEnv)))
   }
 

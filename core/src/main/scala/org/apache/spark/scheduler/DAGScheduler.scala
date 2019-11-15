@@ -469,7 +469,7 @@ private[spark] class DAGScheduler(
    * Get or create the list of parent stages for a given RDD.  The new Stages will be created with
    * the provided firstJobId.
    */
-  // 返回一个RDD依赖的所有父Stage
+  // 返回该RDD之前依赖的所有父Stage
   private def getOrCreateParentStages(rdd: RDD[_], firstJobId: Int): List[Stage] = {
     // getShuffleDependencies方法获得RDD直接相关的ShuffleDependencies(最近的ShuffleDependencies)
     // 如果该RDD其与上一个RDD的关系为窄依赖，则继续向上遍历直到寻找到所有与其相关的ShuffleDependencies
@@ -490,11 +490,12 @@ private[spark] class DAGScheduler(
     val waitingForVisit = new ArrayStack[RDD[_]]
     // 将该RDD压入waitingForVisit栈中
     waitingForVisit.push(rdd)
+    // 该方法执行完成之后，获取到了该RDD之前所有的宽依赖
     while (waitingForVisit.nonEmpty) {
       val toVisit = waitingForVisit.pop()
       if (!visited(toVisit)) {
         visited += toVisit
-        // 返回一个RDD的所有宽依赖，即和该RDD直接相关的父宽依赖集合
+        // 返回该RDD直接相关的父宽依赖集合，并加入栈中
         getShuffleDependencies(toVisit).foreach { shuffleDep =>
           if (!shuffleIdToMapStage.contains(shuffleDep.shuffleId)) {
             // 宽依赖未被注册，则加入

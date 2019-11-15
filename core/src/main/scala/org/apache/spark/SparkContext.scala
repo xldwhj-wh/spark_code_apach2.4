@@ -423,6 +423,8 @@ class SparkContext(config: SparkConf) extends Logging {
     listenerBus.addToStatusQueue(_statusStore.listener.get)
 
     // Create the Spark execution environment (cache, map output tracker, etc)
+    // 创建Spark执行环境SparkEnv
+    // SparkEnv是Spark的执行环境对象，其中包括众多与Executor执行相关的对象。
     _env = createSparkEnv(_conf, isLocal, listenerBus)
     SparkEnv.set(_env)
 
@@ -496,6 +498,7 @@ class SparkContext(config: SparkConf) extends Logging {
     val (sched, ts) = SparkContext.createTaskScheduler(this, master, deployMode)
     _schedulerBackend = sched
     _taskScheduler = ts
+    // 初始化DAGScheduler
     _dagScheduler = new DAGScheduler(this)
     _heartbeatReceiver.ask[Boolean](TaskSchedulerIsSet)
 
@@ -2801,8 +2804,8 @@ object SparkContext extends Logging {
           // 如果匹配到client，则表明使用yarn-client模式，则使用YarnScheduler创建scheduler
           val scheduler = cm.createTaskScheduler(sc, masterUrl)
           // 如masterUrl包含yarn关键字，则调用YarnClusterManager的createSchedulerBackend创建backend
-          // 在createSchedulerBackend方法中，进一步匹配deploy-mode关键字
-          // 如果匹配到cluster，即表明使用yarn-cluster模式，则使用YarnClusterSchedulerBackend创建backend
+          // 在，进一步匹配deploy-mode关键字
+          // 如果匹配到cluster，即表明createSchedulerBackend方法中使用yarn-cluster模式，则使用YarnClusterSchedulerBackend创建backend
           // 如果匹配到client，则表明使用yarn-client模式，则使用YarnClientSchedulerBackend创建scheduler
           val backend = cm.createSchedulerBackend(sc, masterUrl, scheduler)
           cm.initialize(scheduler, backend)

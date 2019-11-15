@@ -167,6 +167,7 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val rpcEnv: Rp
         removeExecutor(executorId, reason)
     }
 
+    // 监听匹配发过来的信息进行后续处理
     override def receiveAndReply(context: RpcCallContext): PartialFunction[Any, Unit] = {
 
       // 接收处理来自CoarseGrainedExecutorBackend发送过来的RegisterExecutor消息
@@ -195,6 +196,7 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val rpcEnv: Rp
               context.senderAddress
             }
           logInfo(s"Registered executor $executorRef ($executorAddress) with ID $executorId")
+          // 记录Executor编号以及该Executor需要使用的核数
           addressToExecutorId(executorAddress) = executorId
           totalCoreCount.addAndGet(cores)
           totalRegisteredExecutors.addAndGet(1)
@@ -402,8 +404,10 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val rpcEnv: Rp
     }
 
     // TODO (prashant) send conf instead of properties
-    // 创建DriverEndpoint内部类消息实体
+    // 创建DriverEndpoint内部类消息实体,向Rpc中注册当前DriverEndpoint
     // DriverEndpoint用于提交task到Executor，接收Executor返回的计算结果
+    // executor就是向DriverEndpoint中反向注册信息，
+    // 这里Driver中的receiveAndReply方法一直监听匹配发过来的信息进行后续处理
     driverEndpoint = createDriverEndpointRef(properties)
   }
 
@@ -461,6 +465,7 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val rpcEnv: Rp
   }
 
   override def reviveOffers() {
+    // receive接收到ReviveOffers消息调用makeOffers方法
     driverEndpoint.send(ReviveOffers)
   }
 

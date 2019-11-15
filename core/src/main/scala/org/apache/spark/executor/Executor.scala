@@ -356,6 +356,7 @@ private[spark] class Executor(
       threadId = Thread.currentThread.getId
       Thread.currentThread.setName(threadName)
       val threadMXBean = ManagementFactory.getThreadMXBean
+      // 生成内存管理taskMemoryManager实例，用于人物运行期间内存管理
       val taskMemoryManager = new TaskMemoryManager(env.memoryManager, taskId)
       val deserializeStartTime = System.currentTimeMillis()
       val deserializeStartCpuTime = if (threadMXBean.isCurrentThreadCpuTimeSupported) {
@@ -364,6 +365,7 @@ private[spark] class Executor(
       Thread.currentThread.setContextClassLoader(replClassLoader)
       val ser = env.closureSerializer.newInstance()
       logInfo(s"Running $taskName (TID $taskId)")
+      // 向Driver终端点发送任务运行开始消息
       execBackend.statusUpdate(taskId, TaskState.RUNNING, EMPTY_BYTE_BUFFER)
       var taskStartTime: Long = 0
       var taskStartCpu: Long = 0
@@ -411,6 +413,7 @@ private[spark] class Executor(
         } else 0L
         var threwException = true
         // 这里的value对于ShuffleMapTask来说，其实就是MapStatus
+        // 对于ShuffleMapTask而言，计算结果会写到BlockManager中，MapStatus存放的是BlockManager的相关信息
         // 封装了ShuffleMapTask计算的数据输出的位置
         // 后边如果还是一个ShuffleMapTask
         // 那么就会去联系MapOutputTracker，来获取上一个ShuffleMapTask的输出位置，然后通过网络拉取数据
@@ -463,7 +466,7 @@ private[spark] class Executor(
         // If the task has been killed, let's fail it.
         task.context.killTaskIfInterrupted()
 
-        // 对mapstatus进行各种序列化和封装，应为后边要通过网络发送给Driver
+        // 对MapStatus进行各种序列化和封装，应为后边要通过网络发送给Driver
         val resultSer = env.serializer.newInstance()
         val beforeSerialization = System.currentTimeMillis()
         val valueBytes = resultSer.serialize(value)
@@ -534,11 +537,13 @@ private[spark] class Executor(
 
         // directSend = sending directly back to the driver
         val serializedResult: ByteBuffer = {
+          // 结果大于最大值（默认1GB）、直接丢弃
           if (maxResultSize > 0 && resultSize > maxResultSize) {
             logWarning(s"Finished $taskName (TID $taskId). Result is larger than maxResultSize " +
               s"(${Utils.bytesToString(resultSize)} > ${Utils.bytesToString(maxResultSize)}), " +
               s"dropping it.")
             ser.serialize(new IndirectTaskResult[Any](TaskResultBlockId(taskId), resultSize))
+            // 存放到BlockManager中
           } else if (resultSize > maxDirectResultSize) {
             val blockId = TaskResultBlockId(taskId)
             env.blockManager.putBytes(

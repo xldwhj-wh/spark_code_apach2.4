@@ -113,7 +113,7 @@ private[spark] class StandaloneSchedulerBackend(
       } else {
         None
       }
-    // 注意此处传入的command变量，这个command就是CoarseGrainedExecutorBackend这个类
+    // 注意此处传入的command变量，这个command就是CoarseGrainedExecutorBackend这个类。104行代码处
     // Application注册时把这个command也提交给了Master
     // master发指令给Worker去启动Excutor所在的进程的时候加载main方法所在的入口类
     // 该入口类就是command中的CoarseGrainedExcutorBackend;

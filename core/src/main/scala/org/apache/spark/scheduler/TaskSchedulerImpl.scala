@@ -212,6 +212,7 @@ private[spark] class TaskSchedulerImpl(
         throw new IllegalStateException(s"more than one active taskSet for stage $stage:" +
           s" ${stageTaskSets.toSeq.map{_._2.taskSet.id}.mkString(",")}")
       }
+      // 将任务集的管理器加入到系统调度中
       schedulableBuilder.addTaskSetManager(manager, manager.taskSet.properties)
 
       if (!isLocal && !hasReceivedTask) {
@@ -229,6 +230,8 @@ private[spark] class TaskSchedulerImpl(
       }
       hasReceivedTask = true
     }
+    // 调用调度器后台进程StandaloneBackendScheduler
+    // 实际上调用的父类CoarseGrainedSchedulerBackend的reviveOffers方法分配资源
     backend.reviveOffers()
   }
 

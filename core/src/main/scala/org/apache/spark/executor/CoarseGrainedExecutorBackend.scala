@@ -66,7 +66,7 @@ private[spark] class CoarseGrainedExecutorBackend(
       // This is a very fast action so we can use "ThreadUtils.sameThread"
       driver = Some(ref)
       // 启动起来之后向Driver发送RegisterExecutor消息
-      // 反向向Driver注册（CoarseGrainedSchedulerBackend）
+      // 反向向CoarseGrainedSchedulerBackend注册
       // 实际上是向通信实体DriverEndpoint发送RegisterExecutor消息注册给Driver
       ref.ask[Boolean](RegisterExecutor(executorId, self, hostname, cores, extractLogUrls))
     }(ThreadUtils.sameThread).onComplete {
@@ -92,6 +92,7 @@ private[spark] class CoarseGrainedExecutorBackend(
       logInfo("Successfully registered with driver")
       try {
         // executor内部有一个后台线程池threadPool，用于处理任务task
+        // 根据环境变量参数启动Executor，在spark中是真正任务的执行者
         executor = new Executor(executorId, hostname, env, userClassPath, isLocal = false)
       } catch {
         case NonFatal(e) =>
@@ -159,7 +160,7 @@ private[spark] class CoarseGrainedExecutorBackend(
     val msg = StatusUpdate(executorId, taskId, state, data)
     // 向Driver（SchedulerBackend）发送StatusUpdate消息
     // 如果是standlone模式，则CoarseGrainedSchedulerBackend中进行消息处理
-    // 因为StandloneSchedulerBackend继承CoarseGrainedSchedulerBackend
+    // 因为StandaloneSchedulerBackend继承CoarseGrainedSchedulerBackend
     driver match {
       case Some(driverRef) => driverRef.send(msg)
       case None => logWarning(s"Drop $msg because has not yet connected to driver")
