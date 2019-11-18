@@ -200,6 +200,7 @@ private[spark] class TaskSchedulerImpl(
     logInfo("Adding task set " + taskSet.id + " with " + tasks.length + " tasks")
     this.synchronized {
       // 创建任务集的管理器，用于管理这个任务集的生命周期
+      // 负责它的那个TaskSet的任务执行状况的监视和管理
       val manager = createTaskSetManager(taskSet, maxTaskFailures)
       val stage = taskSet.stageId
       val stageTaskSets =
@@ -230,7 +231,9 @@ private[spark] class TaskSchedulerImpl(
       }
       hasReceivedTask = true
     }
-    // 调用调度器后台进程StandaloneBackendScheduler
+    // 创建TaskScheduler的时候，会为TaskScheduler创建一个StandaloneBackendScheduler
+    // 负责创建AppClient，向Master注册Application
+    // 这里的backend.reviveOffers调用调度器后台进程StandaloneBackendScheduler
     // 实际上调用的父类CoarseGrainedSchedulerBackend的reviveOffers方法分配资源
     backend.reviveOffers()
   }
@@ -355,6 +358,7 @@ private[spark] class TaskSchedulerImpl(
   def resourceOffers(offers: IndexedSeq[WorkerOffer]): Seq[Seq[TaskDescription]] = synchronized {
     // Mark each slave as alive and remember its hostname
     // Also track if new executor is added
+    // 对传入的Executor列表进行处理，记录其信息，如果有新的Executor加入，则进行标记。
     var newExecAvail = false
     for (o <- offers) {
       if (!hostToExecutors.contains(o.host)) {
@@ -384,11 +388,17 @@ private[spark] class TaskSchedulerImpl(
       }
     }.getOrElse(offers)
 
+    // 首先对可用的executor进行shuffle打散，从而尽量做到负载均衡
     val shuffledOffers = shuffleOffers(filteredOffers)
     // Build a list of tasks to assign to each worker.
+    // 针对WorkerOffer，创建出tasks，可以理解成一个二维数组ArrayBuffer，元素又是一个ArrayBuffer
+    // 并且每个子ArrayBuffer的数量是固定的，也就是Executor可用的cpu数量
     val tasks = shuffledOffers.map(o => new ArrayBuffer[TaskDescription](o.cores / CPUS_PER_TASK))
     val availableCpus = shuffledOffers.map(o => o.cores).toArray
     val availableSlots = shuffledOffers.map(o => o.cores / CPUS_PER_TASK).sum
+    // 从rootPool中去除了排序的TaskSet
+    // TaskScheduler初始化的时候，创建完taskSchedulerImpl、StandaloneSchedulerBackend之后
+    // 会执行一个initialize方法，在该方法中会创建一个调度池，所有提交的TaskSet
     val sortedTaskSets = rootPool.getSortedTaskSetQueue
     for (taskSet <- sortedTaskSets) {
       logDebug("parentName: %s, name: %s, runningTasks: %s".format(

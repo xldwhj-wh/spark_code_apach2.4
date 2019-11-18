@@ -47,6 +47,11 @@ import org.apache.spark.util.collection.MedianHeap
  * @param maxTaskFailures if any particular task fails this number of times, the entire
  *                        task set will be aborted
  */
+// TaskSetManager在一个TaskSchedulerImpl中，对一个TaskSet任务进行调度
+// 负责追踪每一个task,如果task失败的话，会负责重试task，直到超过重试的次数限制
+// 并且会通过延迟调度，为这个TaskSet处理本地化调度机制，它的主要方法是resourceOffer
+// 在该方法中，taskSet会希望在一个节点上运行一个任务，并且接受任务的状态改变消息
+// 来直到他负责的task的状态改变了
 private[spark] class TaskSetManager(
     sched: TaskSchedulerImpl,
     val taskSet: TaskSet,

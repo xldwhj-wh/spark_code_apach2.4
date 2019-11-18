@@ -1151,7 +1151,7 @@ private[spark] class DAGScheduler(
     logDebug("submitMissingTasks(" + stage + ")")
 
     // First figure out the indexes of partition ids to compute.
-    // 获取stage中没有计算的partition的数量
+    // 获取stage中没有计算的partition的数量，
     val partitionsToCompute: Seq[Int] = stage.findMissingPartitions()
 
     // Use the scheduling pool, job group, description, etc. from an ActiveJob associated
@@ -1307,6 +1307,7 @@ private[spark] class DAGScheduler(
         case stage : ResultStage =>
           logDebug(s"Stage ${stage} is actually done; (partitions: ${stage.numPartitions})")
       }
+      // 提交前面加入缓存中的stages
       submitWaitingChildStages(stage)
     }
   }

@@ -220,7 +220,7 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val rpcEnv: Rp
           context.reply(true)
           listenerBus.post(
             SparkListenerExecutorAdded(System.currentTimeMillis(), executorId, data))
-          //  注册成功之后，调用makeOffers()方法给ExecutorBackend分配资源，并且启动Task任务
+          //  注册创建executor句柄成功之后，调用makeOffers()方法给ExecutorBackend分配资源，并且启动Task任务
           makeOffers()
         }
 
@@ -252,16 +252,22 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val rpcEnv: Rp
       // Make sure no executor is killed while some task is launching on it
       val taskDescs = CoarseGrainedSchedulerBackend.this.synchronized {
         // Filter out executors under killing
+        // 获取集群中可用的Executor列表
+        // 将其封装成workOffers，每个workOffers代表了每个executor可用的cpu数量
         val activeExecutors = executorDataMap.filterKeys(executorIsAlive)
         val workOffers = activeExecutors.map {
           case (id, executorData) =>
             new WorkerOffer(id, executorData.executorHost, executorData.freeCores,
               Some(executorData.executorAddress.hostPort))
         }.toIndexedSeq
+        // 调用TaskSchedulerImpl的resourceOffers执行任务分配算法，进行资源分配
+        // 将各个task分配到executor上去
         scheduler.resourceOffers(workOffers)
       }
       if (!taskDescs.isEmpty) {
-        // 调用launchTask方法，启动Task任务
+        // 分配好task到executor之后，调用launchTask方法
+        // 将分配的task发送launchTasks消息到对应的Executor上去
+        // 由Executor启动并执行Task任务
         launchTasks(taskDescs)
       }
     }
