@@ -495,6 +495,7 @@ class SparkContext(config: SparkConf) extends Logging {
 
     // Create and start the scheduler
     // 根据提交任务的deploy-mode创建不同类型的TaskScheduler和SchedulerBackend
+    // 此处会调用TaskSchedulerImpl的initialize方法进行初始化创建调度池rootPool对象
     val (sched, ts) = SparkContext.createTaskScheduler(this, master, deployMode)
     _schedulerBackend = sched
     _taskScheduler = ts
@@ -504,7 +505,7 @@ class SparkContext(config: SparkConf) extends Logging {
 
     // start TaskScheduler after taskScheduler sets DAGScheduler reference in DAGScheduler's
     // constructor
-    // 启动taskscheduler,调用TaskSchedulerImpl的start方法
+    // 启动TaskScheduler,调用TaskSchedulerImpl的start方法
     // 因为该处大部分实现类中都没有start方法并且继承自TaskSchedulerImpl类
     _taskScheduler.start()
 
@@ -515,6 +516,7 @@ class SparkContext(config: SparkConf) extends Logging {
       System.setProperty("spark.ui.proxyBase", "/proxy/" + _applicationId)
     }
     _ui.foreach(_.setAppId(_applicationId))
+    //
     _env.blockManager.initialize(_applicationId)
 
     // The metrics system for Driver need to be set spark.app.id to app ID.

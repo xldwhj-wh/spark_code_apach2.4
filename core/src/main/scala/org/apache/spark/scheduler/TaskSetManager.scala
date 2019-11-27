@@ -445,6 +445,10 @@ private[spark] class TaskSetManager(
    * @param host  the host Id of the offered resource
    * @param maxLocality the maximum locality we want to schedule the tasks at
    */
+  /**
+    * 判断这个executor在这个本地化级别之前的等待时间是多少
+    * 如果说，本地化级别的等待时间在一定范围内，那么就认为task使用本地化级别可以在executor启动
+    */
   @throws[TaskNotSerializableException]
   def resourceOffer(
       execId: String,
@@ -462,7 +466,10 @@ private[spark] class TaskSetManager(
       var allowedLocality = maxLocality
 
       if (maxLocality != TaskLocality.NO_PREF) {
+        // 获取当前任务集允许执行的数据本地性，Locality随时间变化而变化
         allowedLocality = getAllowedLocalityLevel(curTime)
+        // 如果allowedLocality比maxLocality(指定的数据本地行)低，即allowedLocality > maxLocality
+        // 则使用指定的数据本地行
         if (allowedLocality > maxLocality) {
           // We're not allowed to search for farther-away tasks
           allowedLocality = maxLocality

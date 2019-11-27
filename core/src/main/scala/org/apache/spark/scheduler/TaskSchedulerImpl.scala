@@ -159,9 +159,12 @@ private[spark] class TaskSchedulerImpl(
   def initialize(backend: SchedulerBackend) {
     this.backend = backend
     schedulableBuilder = {
+      // 根据调度模式配置调度池
       schedulingMode match {
+          // 使用FIFO方式创建调度池
         case SchedulingMode.FIFO =>
           new FIFOSchedulableBuilder(rootPool)
+          // 使用FAIR调度方式
         case SchedulingMode.FAIR =>
           new FairSchedulableBuilder(rootPool, conf)
         case _ =>
@@ -201,6 +204,7 @@ private[spark] class TaskSchedulerImpl(
     this.synchronized {
       // 创建任务集的管理器，用于管理这个任务集的生命周期
       // 负责它的那个TaskSet的任务执行状况的监视和管理
+      // 初始化时调用addPendingTask方法根据任务自身首选位置得到任务集的数据本地化列表
       val manager = createTaskSetManager(taskSet, maxTaskFailures)
       val stage = taskSet.stageId
       val stageTaskSets =
@@ -213,7 +217,7 @@ private[spark] class TaskSchedulerImpl(
         throw new IllegalStateException(s"more than one active taskSet for stage $stage:" +
           s" ${stageTaskSets.toSeq.map{_._2.taskSet.id}.mkString(",")}")
       }
-      // 将任务集的管理器加入到系统调度中
+      // 将任务集的管理器加入到系统调度池中，由系统统一调配，该调度器属于应用级别
       schedulableBuilder.addTaskSetManager(manager, manager.taskSet.properties)
 
       if (!isLocal && !hasReceivedTask) {
@@ -318,13 +322,20 @@ private[spark] class TaskSchedulerImpl(
     var launchedTask = false
     // nodes and executors that are blacklisted for the entire application have already been
     // filtered out by this point
+    // 遍历所有的Executor，为每个worker分配运行的任务
     for (i <- 0 until shuffledOffers.size) {
       val execId = shuffledOffers(i).executorId
       val host = shuffledOffers(i).host
+      // 判断当前executor的cpu数量是否至少大于每个task需要的cpu（默认为1）
       if (availableCpus(i) >= CPUS_PER_TASK) {
         try {
+          // 调用TaskSetManager的resourceOffer方法找到在executor上，哪些TaskSet的task可以通过当前本地化级别启动
+          // 遍历在该executor上当前本地化级别可以运行的task
           for (task <- taskSet.resourceOffer(execId, host, maxLocality)) {
+            // 把每一个task放入要在当前executor运行的task二维数组里面，即指定executor要运行的task
+            // 到此为止，是task分配算法的核心
             tasks(i) += task
+            // 将相应的分配信息加入内存缓存
             val tid = task.taskId
             taskIdToTaskSetManager.put(tid, taskSet)
             taskIdToExecutorId(tid) = execId
@@ -360,12 +371,16 @@ private[spark] class TaskSchedulerImpl(
     // Also track if new executor is added
     // 对传入的Executor列表进行处理，记录其信息，如果有新的Executor加入，则进行标记。
     var newExecAvail = false
+    // 遍历有可用资源的Executor
     for (o <- offers) {
+      // 如果没有包含了这个executor的host，初始化一个集合，存放host
       if (!hostToExecutors.contains(o.host)) {
         hostToExecutors(o.host) = new HashSet[String]()
       }
+      // 如果executorIdToRunningTaskIds不包含这个executorId
       if (!executorIdToRunningTaskIds.contains(o.executorId)) {
         hostToExecutors(o.host) += o.executorId
+        // 通知DAGScheduler添加Executors
         executorAdded(o.executorId, o.host)
         executorIdToHost(o.executorId) = o.host
         executorIdToRunningTaskIds(o.executorId) = HashSet[Long]()
@@ -396,9 +411,10 @@ private[spark] class TaskSchedulerImpl(
     val tasks = shuffledOffers.map(o => new ArrayBuffer[TaskDescription](o.cores / CPUS_PER_TASK))
     val availableCpus = shuffledOffers.map(o => o.cores).toArray
     val availableSlots = shuffledOffers.map(o => o.cores / CPUS_PER_TASK).sum
-    // 从rootPool中去除了排序的TaskSet
+    // 从rootPool中取出了排序的TaskSetManager
     // TaskScheduler初始化的时候，创建完taskSchedulerImpl、StandaloneSchedulerBackend之后
-    // 会执行一个initialize方法，在该方法中会创建一个调度池，所有提交的TaskSet
+    // 会执行TaskSchedulerImpl的initialize方法，在该方法中会根据调度策略创建一个调度池
+    // 所有提交的TaskSetManager会放入这个调度池，在执行task分配算法的时候，会从调度池中取出排好队的TaskSet
     val sortedTaskSets = rootPool.getSortedTaskSetQueue
     for (taskSet <- sortedTaskSets) {
       logDebug("parentName: %s, name: %s, runningTasks: %s".format(
@@ -411,6 +427,17 @@ private[spark] class TaskSchedulerImpl(
     // Take each TaskSet in our scheduling order, and then offer it each node in increasing order
     // of locality levels so that it gets a chance to launch local tasks on all of them.
     // NOTE: the preferredLocality order: PROCESS_LOCAL, NODE_LOCAL, NO_PREF, RACK_LOCAL, ANY
+    // 任务分配算法的核心，遍历所有的TaskSet以及每一种本地化级别
+    // PROCESS_LOCAL：进程本地化，rdd的partition和task进入一个Executor，那么速度就比较快
+    // NODE_LOCAL：rdd的partition和task不在一个Executor中但是在一个worker节点上，
+    // 比如说，数据作为一个HDFS block块在节点上，而task在节点上某个executor中运行；
+    // 或者是数据和task在一个节点上的不同executor中，数据需要在进程间进行传输
+    // NO_PREF：没有所谓的本地化级别，没有好坏之分，比如说SparkSQL读取MySql中的数据
+    // RACK_LOCAL：机架本地化，rdd的partition和task在一个机架上,通过网络传输
+    // ANY：数据和task可能在集群中的任何地方，而且不在一个机架中，性能最差
+    // 双重循环遍历所有的taskSet,尝试每一种本地化级别
+    // 优先使用最小的本地化级别，如果启动不了，那么跳出do while循环，进入下一种本地化级别，即放大本地化级别
+    // 以此类推，直到尝试将taskSet在某些本地化级别下，让task在executor上全部启动
     for (taskSet <- sortedTaskSets) {
       // Skip the barrier taskSet if the available slots are less than the number of pending tasks.
       if (taskSet.isBarrier && availableSlots < taskSet.numTasks) {
@@ -424,9 +451,15 @@ private[spark] class TaskSchedulerImpl(
         var launchedAnyTask = false
         // Record all the executor IDs assigned barrier tasks on.
         val addressesWithDescs = ArrayBuffer[(String, TaskDescription)]()
+        // 对于每一个taskSet，从最好（最小）的一个本地化级别  开始遍历
         for (currentMaxLocality <- taskSet.myLocalityLevels) {
           var launchedTaskAtCurrentMaxLocality = false
           do {
+            /**
+              * 对于当前的taskSet,尝试优先使用最小的本地化级别，将taskSet的task，在executor上启动
+              * 如果启动不了，就跳出do while 循环，进入下一种本地化级别，也就是放大本地化级别
+              * 以此类推，直到尝试将taskSet在某种本地化级别下，将task在executor上全部启动
+              */
             launchedTaskAtCurrentMaxLocality = resourceOfferSingleTaskSet(taskSet,
               currentMaxLocality, shuffledOffers, availableCpus, tasks, addressesWithDescs)
             launchedAnyTask |= launchedTaskAtCurrentMaxLocality
@@ -483,6 +516,7 @@ private[spark] class TaskSchedulerImpl(
     var reason: Option[ExecutorLossReason] = None
     synchronized {
       try {
+        、、
         Option(taskIdToTaskSetManager.get(tid)) match {
           case Some(taskSet) =>
             if (state == TaskState.LOST) {
