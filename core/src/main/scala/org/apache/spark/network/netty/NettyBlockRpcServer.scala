@@ -58,6 +58,7 @@ class NettyBlockRpcServer(
       case openBlocks: OpenBlocks =>
         val blocksNum = openBlocks.blockIds.length
         val blocks = for (i <- (0 until blocksNum).view)
+          // 调用的blockManager的getBlockData读取该节点上的数据，读取到的数据块封装为ManagerBuffer序列缓存在内存中
           yield blockManager.getBlockData(BlockId.apply(openBlocks.blockIds(i)))
         val streamId = streamManager.registerStream(appId, blocks.iterator.asJava)
         logTrace(s"Registered streamId $streamId with $blocksNum buffers")

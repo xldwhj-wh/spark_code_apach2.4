@@ -2772,6 +2772,7 @@ object SparkContext extends Logging {
         scheduler.initialize(backend)
         (backend, scheduler)
 
+        // 伪分布式模式
       case LOCAL_CLUSTER_REGEX(numSlaves, coresPerSlave, memoryPerSlave) =>
         // Check to make sure memory requested <= memoryPerSlave. Otherwise Spark will just hang.
         val memoryPerSlaveInt = memoryPerSlave.toInt
@@ -2792,6 +2793,7 @@ object SparkContext extends Logging {
         }
         (backend, scheduler)
 
+        // yarn-cluster或者yarn-client模式
       case masterUrl =>
         // getClusterManager方法根据masterUrl选出符合的类构造scheduler和backend
         // 如masterUrl包含yarn关键字，则获取到YarnClusterManager类来执行下述过程

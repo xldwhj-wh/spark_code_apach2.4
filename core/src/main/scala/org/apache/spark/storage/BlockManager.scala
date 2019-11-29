@@ -118,7 +118,7 @@ private[spark] class ByteBufferBlockData(
  * Note that [[initialize()]] must be called before the BlockManager is usable.
  */
 // BlockManager运行在每个节点上（driver和executor都会有一份）
-// 主要提供了在本地或者远程 存取 数据的功能
+// 主要提供了在本地或者远程存取数据的功能
 // 支持内存、磁盘、堆外存储等，initialize方法进行初始化
 private[spark] class BlockManager(
     executorId: String,
@@ -267,8 +267,10 @@ private[spark] class BlockManager(
       maxOffHeapMemory,
       slaveEndpoint)
 
+    // 更新blockManagerId的值
     blockManagerId = if (idFromMaster != null) idFromMaster else id
 
+    // 判断是否开了外部shuffle服务
     shuffleServerId = if (externalShuffleServiceEnabled) {
       logInfo(s"external shuffle service port = $externalShuffleServicePort")
       BlockManagerId(executorId, blockTransferService.hostName, externalShuffleServicePort)
@@ -623,21 +625,25 @@ private[spark] class BlockManager(
           })
           Some(new BlockResult(ci, DataReadMethod.Memory, info.size))
         } else if (level.useDisk && diskStore.contains(blockId)) {
-          //
+          // 从磁盘中获取数据，由于保存到磁盘中的数据都是序列化的，读取到的数据也是序列化的
           val diskData = diskStore.getBytes(blockId)
           val iterToReturn: Iterator[Any] = {
             if (level.deserialized) {
+              // 如果存储级别需要反序列化，则把读取到的数据反序列化
               val diskValues = serializerManager.dataDeserializeStream(
                 blockId,
                 diskData.toInputStream())(info.classTag)
+              // 将反序列化的数据存储到内存中
               maybeCacheDiskValuesInMemory(info, blockId, level, diskValues)
             } else {
+              // 如果存储级别不需要反序列化，则直接把这些序列化数据存储到内存中
               val stream = maybeCacheDiskBytesInMemory(info, blockId, level, diskData)
                 .map { _.toInputStream(dispose = false) }
                 .getOrElse { diskData.toInputStream() }
               serializerManager.dataDeserializeStream(blockId, stream)(info.classTag)
             }
           }
+          // 数据读取完成后，返回数据以及数据块的大小、读取方法等信息
           val ci = CompletionIterator[Any, Iterator[Any]](iterToReturn, {
             releaseLockAndDispose(blockId, diskData, taskAttemptId)
           })
@@ -769,6 +775,7 @@ private[spark] class BlockManager(
       null
     }
 
+    // 获取每个blockId对应的BlockManager信息
     val locations = sortLocations(blockLocations)
     val maxFetchFailures = locations.size
     var locationIterator = locations.iterator
@@ -810,6 +817,7 @@ private[spark] class BlockManager(
           null
       }
 
+      // 获取到数据后返回该数据
       if (data != null) {
         // SPARK-24307 undocumented "escape-hatch" in case there are any issues in converting to
         // ChunkedByteBuffer, to go back to old code-path.  Can be removed post Spark 2.4 if
@@ -833,12 +841,15 @@ private[spark] class BlockManager(
    * any locks if the block was fetched from a remote block manager. The read lock will
    * automatically be freed once the result's `data` iterator is fully consumed.
    */
+  //  读取数据入口
   def get[T: ClassTag](blockId: BlockId): Option[BlockResult] = {
+    // 本地读取数据
     val local = getLocalValues(blockId)
     if (local.isDefined) {
       logInfo(s"Found block $blockId locally")
       return local
     }
+    // 远端读取数据
     val remote = getRemoteValues[T](blockId)
     if (remote.isDefined) {
       logInfo(s"Found block $blockId remotely")
@@ -894,6 +905,7 @@ private[spark] class BlockManager(
       makeIterator: () => Iterator[T]): Either[BlockResult, Iterator[T]] = {
     // Attempt to read the block from local or remote storage. If it's present, then we don't need
     // to go through the local-get-or-put path.
+    // 读数据的入口，本地读取使用getLocalValues，远端读取使用getRemoteValues
     get[T](blockId)(classTag) match {
       case Some(block) =>
         return Left(block)
@@ -901,6 +913,7 @@ private[spark] class BlockManager(
         // Need to compute the block.
     }
     // Initially we hold no locks on this block.
+    // 写数据入口点
     doPutIterator(blockId, makeIterator, level, classTag, keepReadLock = true) match {
       case None =>
         // doPut() didn't hand work back to us, so the block already existed or was successfully
@@ -1175,20 +1188,24 @@ private[spark] class BlockManager(
       classTag: ClassTag[T],
       tellMaster: Boolean = true,
       keepReadLock: Boolean = false): Option[PartiallyUnrolledIterator[T]] = {
+    // 辅助类，用于获取数据块的信息，并对数据结果进行处理
     doPut(blockId, level, classTag, tellMaster = tellMaster, keepReadLock = keepReadLock) { info =>
       val startTimeMs = System.currentTimeMillis
       var iteratorFromFailedMemoryStorePut: Option[PartiallyUnrolledIterator[T]] = None
       // Size of the block in bytes
       var size = 0L
+      // 把数据放大内存中
       if (level.useMemory) {
         // Put it in memory first, even if it also has useDisk set to true;
         // We will drop it to disk later if the memory store can't hold it.
         if (level.deserialized) {
+          // 如果设置反序列化，则说明数据为值类型，调用putIteratorAsValues方法把数据写入内存
           memoryStore.putIteratorAsValues(blockId, iterator(), classTag) match {
             case Right(s) =>
               size = s
             case Left(iter) =>
               // Not enough space to unroll this block; drop to disk if applicable
+              // 数据写入失败（如没有多余的内存空间）。如果存储级别设置为存储到磁盘，则写到磁盘中,否则返回结果
               if (level.useDisk) {
                 logWarning(s"Persisting block $blockId to disk instead.")
                 diskStore.put(blockId) { channel =>
@@ -1201,11 +1218,13 @@ private[spark] class BlockManager(
               }
           }
         } else { // !level.deserialized
+          // 如果没有设置反序列化，则数据为字节类型，调用putIteratorAsBytes方法讲数据存入内存中
           memoryStore.putIteratorAsBytes(blockId, iterator(), classTag, level.memoryMode) match {
             case Right(s) =>
               size = s
             case Left(partiallySerializedValues) =>
               // Not enough space to unroll this block; drop to disk if applicable
+              // 同上内存不足的情况
               if (level.useDisk) {
                 logWarning(s"Persisting block $blockId to disk instead.")
                 diskStore.put(blockId) { channel =>
@@ -1220,6 +1239,7 @@ private[spark] class BlockManager(
         }
 
       } else if (level.useDisk) {
+        // 如果存入磁盘，调用diskStore.put方法把数据写到磁盘中
         diskStore.put(blockId) { channel =>
           val out = Channels.newOutputStream(channel)
           serializerManager.dataSerializeStream(blockId, out, iterator())(classTag)

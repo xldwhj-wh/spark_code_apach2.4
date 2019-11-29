@@ -159,12 +159,13 @@ class BlockManagerMasterEndpoint(
       }
   }
 
+  // 在blockLocations和blockManagerInfo中删除RDD的数据元信息
   private def removeRdd(rddId: Int): Future[Seq[Int]] = {
     // First remove the metadata for the given RDD, and then asynchronously remove the blocks
     // from the slaves.
-
     // Find all blocks for the given RDD, remove the block from both blockLocations and
     // the blockManagerInfo that is tracking the blocks.
+    // 根据RDD编号获取RDD存储对应的数据块信息
     val blocks = blockLocations.asScala.keys.flatMap(_.asRDDId).filter(_.rddId == rddId)
     blocks.foreach { blockId =>
       val bms: mutable.HashSet[BlockManagerId] = blockLocations.get(blockId)
@@ -221,7 +222,7 @@ class BlockManagerMasterEndpoint(
   }
 
   private def removeBlockManager(blockManagerId: BlockManagerId) {
-    // 根据blockManagerId从blockManagerInfo获取到对应各info信息
+    // 根据blockManagerId从blockManagerInfo获取到对应的info信息
     val info = blockManagerInfo(blockManagerId)
 
     // Remove the block manager from blockManagerIdByExecutor.
@@ -232,6 +233,7 @@ class BlockManagerMasterEndpoint(
     // 从blockManagerInfo中移除blockManagerId对应的blockManagerInfo
     blockManagerInfo.remove(blockManagerId)
 
+    // 获取BlockManagerInfo内部所有的block块的blockId
     val iterator = info.blocks.keySet.iterator
     // 遍历该blockManagerInfo内部所有的block块的blockId
     while (iterator.hasNext) {
@@ -448,6 +450,7 @@ class BlockManagerMasterEndpoint(
     }
 
     // 调用blockManagerInfo的updateBlockInfo方法更新block信息
+    // 根据参数判断操作（插入、删除、更新）对块进行对应的操作
     blockManagerInfo(blockManagerId).updateBlockInfo(blockId, storageLevel, memSize, diskSize)
 
     // 每一个block可能会在多个BlockManager上面
@@ -588,7 +591,7 @@ private[spark] class BlockManagerInfo(
       }
     }
 
-    // 给block创建一份BlocakStatus，然后根据持久化级别，对相应的内存资源进行计算
+    // 给block创建一份BlockStatus，然后根据持久化级别，对相应的内存资源进行计算
     if (storageLevel.isValid) {
       /* isValid means it is either stored in-memory or on-disk.
        * The memSize here indicates the data size in or dropped from memory,

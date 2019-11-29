@@ -111,7 +111,10 @@ private[spark] class NettyBlockTransferService(
     try {
       val blockFetchStarter = new RetryingBlockFetcher.BlockFetchStarter {
         override def createAndStart(blockIds: Array[String], listener: BlockFetchingListener) {
+          // 根据远程节点的ip和端口创建通信客户端
           val client = clientFactory.createClient(host, port)
+          // 通过该客户端向指定节点发送数据消息
+          // 调用OneForOneBlockFetcher的start方法
           new OneForOneBlockFetcher(client, appId, execId, blockIds, listener,
             transportConf, tempFileManager).start()
         }

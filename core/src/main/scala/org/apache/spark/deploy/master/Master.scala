@@ -963,10 +963,10 @@ private[deploy] class Master(
     // 获取状态为alive的worker的数量，即当前可用worker的数量
     val numWorkersAlive = shuffledAliveWorkers.size
     var curPos = 0
-    // 首先，针对driver进行调度，什么情况下才会进行driver的注册？
-    // 只有用yarn-cluster模式提交的时候才会注册driver
-    // 因为stanalone和yarn-client模式，都会在本地直接启动driver，而不会来注册driver，就更不可能让master调度driver了
-    // 遍历waitingDrivers中所有driver进行资源调度
+    // 首先，针对Driver进行调度，什么情况下才会进行Driver的注册？
+    // 只有用yarn-cluster模式提交的时候才会注册Driver
+    // 因为standAlone和yarn-client模式，都会在本地直接启动Driver，而不会来注册Driver，就更不可能让master调度Driver了
+    // 遍历waitingDrivers中所有Driver进行资源调度
     for (driver <- waitingDrivers.toList) { // iterate over a copy of waitingDrivers
       // We assign workers to each waiting driver in a round-robin fashion. For each driver, we
       // start from the last worker that was assigned a driver, and continue onwards until we have

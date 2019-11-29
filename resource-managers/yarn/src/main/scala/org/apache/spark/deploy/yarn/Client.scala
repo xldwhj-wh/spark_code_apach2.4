@@ -157,6 +157,7 @@ private[spark] class Client(
     var appId: ApplicationId = null
     try {
       launcherBackend.connect()
+      // 创建YarnClient，用于和Yarn集群进行交互
       yarnClient.init(hadoopConf)
       yarnClient.start()
 
@@ -164,6 +165,7 @@ private[spark] class Client(
         .format(yarnClient.getYarnClusterMetrics.getNumNodeManagers))
 
       // Get a new application from our RM
+      // 向ResourceManager申请应用程序编号
       val newApp = yarnClient.createApplication()
       val newAppResponse = newApp.getNewApplicationResponse()
       appId = newAppResponse.getApplicationId()
@@ -172,14 +174,17 @@ private[spark] class Client(
         Option(appId.toString)).setCurrentContext()
 
       // Verify whether the cluster has enough resources for our AM
+      // 确认在YARN集群中是否有足够的资源启动ApplicationMaster
       verifyClusterResources(newAppResponse)
 
       // Set up the appropriate contexts to launch our AM
+      // 构造适当的环境用于启动ApplicationMaster
       val containerContext = createContainerLaunchContext(newAppResponse)
       val appContext = createApplicationSubmissionContext(newApp, containerContext)
 
       // Finally, submit and monitor the application
       logInfo(s"Submitting application $appId to ResourceManager")
+      // 向ResourceManager提交并监控应用程序
       yarnClient.submitApplication(appContext)
       launcherBackend.setAppId(appId.toString)
       reportLauncherState(SparkAppHandle.State.SUBMITTED)

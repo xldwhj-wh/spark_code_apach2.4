@@ -106,7 +106,7 @@ private[spark] class ShuffleMapTask(
       val manager = SparkEnv.get.shuffleManager
       // 从ShuffleManager中获取ShuffleWriter
       // registerShuffle的registerShuffle方法决定getWriter方法中返回调用哪个manager
-      // manager包括unsafeShuffleHandle、bypassMergeSortHandle和SortShuffleWriter
+      // manager包括UnsafeShuffleWriter、BypassMergeSortShuffleWriter和SortShuffleWriter
       writer = manager.getWriter[Any, Any](dep.shuffleHandle, partitionId, context)
       // 核心处理代码是该句
       // 首先调用了rdd的iterator方法，并且传入了当前task要处理哪个partition

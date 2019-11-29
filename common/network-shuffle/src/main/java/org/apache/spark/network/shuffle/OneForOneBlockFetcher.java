@@ -109,7 +109,9 @@ public class OneForOneBlockFetcher {
     if (blockIds.length == 0) {
       throw new IllegalArgumentException("Zero-sized blockIds array");
     }
-
+    // 通过客户端发送数据块消息
+    // 在NettyBlockRpcServer的receive中对消息进行匹配，
+    // 如果是请求读取消息则调用BlockManager的getBlockData方法获取对应节点的数据
     client.sendRpc(openMessage.toByteBuffer(), new RpcResponseCallback() {
       @Override
       public void onSuccess(ByteBuffer response) {

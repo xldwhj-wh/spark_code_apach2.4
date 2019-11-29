@@ -95,6 +95,7 @@ abstract class BlockTransferService extends ShuffleClient with Closeable with Lo
       tempFileManager: DownloadFileManager): ManagedBuffer = {
     // A monitor for the thread to wait on.
     val result = Promise[ManagedBuffer]()
+    // 调用NettyBlockTransferService的fetchBlocks方法
     fetchBlocks(host, port, execId, Array(blockId),
       new BlockFetchingListener {
         override def onBlockFetchFailure(blockId: String, exception: Throwable): Unit = {

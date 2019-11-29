@@ -516,7 +516,6 @@ private[spark] class TaskSchedulerImpl(
     var reason: Option[ExecutorLossReason] = None
     synchronized {
       try {
-        、、
         Option(taskIdToTaskSetManager.get(tid)) match {
           case Some(taskSet) =>
             if (state == TaskState.LOST) {

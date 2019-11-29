@@ -54,6 +54,7 @@ private[spark] class YarnClientSchedulerBackend(
     val args = new ClientArguments(argsArrayBuf.toArray)
     totalExpectedExecutors = SchedulerBackendUtils.getInitialTargetExecutorNumber(conf)
     client = new Client(args, conf)
+    // 通过submitApplication方法申请启动Application
     bindToYarn(client.submitApplication(), None)
 
     // SPARK-8687: Ensure all necessary properties have already been set before
