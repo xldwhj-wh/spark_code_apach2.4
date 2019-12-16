@@ -783,6 +783,7 @@ private[spark] class BlockManager(
       val loc = locationIterator.next()
       logDebug(s"Getting remote block $blockId from $loc")
       val data = try {
+        // BlockTransferService从远程拉取数据
         blockTransferService.fetchBlockSync(
           loc.host, loc.port, loc.executorId, blockId.toString, tempFileManager)
       } catch {

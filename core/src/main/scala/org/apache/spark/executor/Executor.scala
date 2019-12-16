@@ -419,9 +419,8 @@ private[spark] class Executor(
         // 来获取上一个ShuffleMapTask的输出位置，然后通过网络拉取数据
         val value = Utils.tryWithSafeFinally {
           // 执行task，调用Task的run方法
-          // 这里对于ShuffleMapTask来说，其实就是MapStatus
-          // 封装了BlockManager的相关信息，或许如果还有ShuffleMapTask，
-          // 则会联系MapOutputTracker，获取上一个ShuffleMapTask计算的输出位置
+          // 这里对于ShuffleMapTask来说，其实就是MapStatus,其封装了BlockManager的相关信息
+          // 如果之后还有ShuffleMapTask，则会联系MapOutputTracker，获取上一个ShuffleMapTask计算的输出位置
           val res = task.run(
             taskAttemptId = taskId,
             attemptNumber = taskDescription.attemptNumber,
