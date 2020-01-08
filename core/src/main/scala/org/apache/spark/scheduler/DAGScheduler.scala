@@ -596,7 +596,8 @@ private[spark] class DAGScheduler(
         val rddHasUncachedPartitions = getCacheLocs(rdd).contains(Nil)
         if (rddHasUncachedPartitions) {
           // 依次遍历RDD的依赖关系
-          // 对于每一种有shuffle的操作，底层对应了三个RDD，MapPartitionsRDD、ShuffleRDD、MapPartitionsRDD
+          // 对于每一种有shuffle的操作，底层对应了三个RDD，
+          // MapPartitionsRDD、ShuffleRDD、MapPartitionsRDD
           for (dep <- rdd.dependencies) {
             dep match {
               // 如果是宽依赖关系，利用getOrCreateShuffleMapStage方法获取该ShuffleDependency对应的ShuffleMapStage
@@ -1123,7 +1124,8 @@ private[spark] class DAGScheduler(
     if (jobId.isDefined) {
       logDebug("submitStage(" + stage + ")")
       if (!waitingStages(stage) && !runningStages(stage) && !failedStages(stage)) {
-        // 调用getMissingParentStages方法获得该Stage所有的父Stage，将其父stage存放在missing中并且按照stage id进行排序
+        // 调用getMissingParentStages方法获得该Stage所有的父Stage，
+        // 将其父stage存放在missing中并且按照stage id进行排序
         val missing = getMissingParentStages(stage).sortBy(_.id)
         logDebug("missing: " + missing)
         // 如果该stage不存在父stage，则直接提交该stage中的所有任务

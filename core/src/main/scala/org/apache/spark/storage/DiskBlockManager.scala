@@ -55,7 +55,9 @@ private[spark] class DiskBlockManager(conf: SparkConf, deleteFilesOnStop: Boolea
   // org.apache.spark.network.shuffle.ExternalShuffleBlockResolver#getFile().
   def getFile(filename: String): File = {
     // Figure out which local directory it hashes to, and which subdirectory in that
+    // 根据文件名获取哈希值
     val hash = Utils.nonNegativeHash(filename)
+    // 根据哈希值与本地文件一级目录的总数求余数
     val dirId = hash % localDirs.length
     val subDirId = (hash / localDirs.length) % subDirsPerLocalDir
 

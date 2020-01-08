@@ -62,28 +62,44 @@ object Partitioner {
    *
    * We use two method parameters (rdd, others) to enforce callers passing at least 1 RDD.
    */
+  // 父RDD存在一个或者多个的时候
+  // 生成子rdd的分区器以及以及分区数量的判断
   def defaultPartitioner(rdd: RDD[_], others: RDD[_]*): Partitioner = {
+    // 获取所有的父RDD
     val rdds = (Seq(rdd) ++ others)
+    // 过滤出拥有分区器的父RDD
     val hasPartitioner = rdds.filter(_.partitioner.exists(_.numPartitions > 0))
-
+    // 过滤出拥有最大分区数的父RDD的分区器类型
     val hasMaxPartitioner: Option[RDD[_]] = if (hasPartitioner.nonEmpty) {
       Some(hasPartitioner.maxBy(_.partitions.length))
     } else {
       None
     }
 
+    // 使用rdd.context.defaultParallelism取出对应的值
+    // 如果设置了spark.default.parallelism则为该值
+    // 也是map-reduce中reduce task的个数
     val defaultNumPartitions = if (rdd.context.conf.contains("spark.default.parallelism")) {
       rdd.context.defaultParallelism
     } else {
+      // 否则使用所有父RDD中最大的分区数作为子RDD的分区数量
+      // 可能有不存在分区器的父RDD，所以与hasPartitioner.maxBy(_.partitions.length)值不同
       rdds.map(_.partitions.length).max
     }
 
     // If the existing max partitioner is an eligible one, or its partitions number is larger
     // than the default number of partitions, use the existing partitioner.
+    // 如果hasMaxPartitioner（拥有最大分区数的父RDD使用的分区器）
+    // 存在并且可用或者其分区数大于默认分区数（spark.default.parallelism的值）
+    // 使用该父RDD的分区器作为子RDD的分区器，
     if (hasMaxPartitioner.nonEmpty && (isEligiblePartitioner(hasMaxPartitioner.get, rdds) ||
         defaultNumPartitions < hasMaxPartitioner.get.getNumPartitions)) {
       hasMaxPartitioner.get.partitioner.get
     } else {
+      // 否则，默认使用HashPartitioner分区器
+      // 分区数量为defaultNumPartitions，
+      // 如果设置了spark.default.parallelism则使用策略选择的分区数
+      // 否则和父RDD的最大分区数保持一致，防止内存溢出
       new HashPartitioner(defaultNumPartitions)
     }
   }

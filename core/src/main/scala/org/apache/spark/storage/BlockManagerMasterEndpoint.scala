@@ -37,8 +37,9 @@ import org.apache.spark.util.{ThreadUtils, Utils}
  * BlockManagerMasterEndpoint is an [[ThreadSafeRpcEndpoint]] on the master node to track statuses
  * of all slaves' block managers.
  */
-// BlockManagerMasterEndpoint负责维护各个executor的BlockManager的元数据、
+// BlockManagerMasterEndpoint负责维护各个BlockManager的元数据、
 // BlockManagerInfo、BlockStatus等信息
+// 由driver端持有
 private[spark]
 class BlockManagerMasterEndpoint(
     override val rpcEnv: RpcEnv,
@@ -60,8 +61,8 @@ class BlockManagerMasterEndpoint(
   private val blockManagerIdByExecutor = new mutable.HashMap[String, BlockManagerId]
 
   // Mapping from block id to the set of block managers that have the block.
-  // 存放了BlockId和BlockManagerId对应的列表，原因在于一个数据块可能存储多个
-  // 可以有多个副本，保存在多个Executor中
+  // 存放了BlockId和BlockManagerId对应的列表
+  // 原因在于一个数据块可能有多个副本，保存在多个Executor中
   private val blockLocations = new JHashMap[BlockId, mutable.HashSet[BlockManagerId]]
 
   private val askThreadPool =
@@ -396,10 +397,12 @@ class BlockManagerMasterEndpoint(
     if (!blockManagerInfo.contains(id)) {
       // 如果blockManagerInfo Map中没有BlockManagerId
       // 那么安全检查同步的blockManagerIdByExecutor Map里，也必须没有该BlockManagerId
-      // 进入该处说明blockManagerInfo Map中没有BlockManagerId，需要移除BlockManagerId
 
+      // 进入该处说明blockManagerInfo Map中没有BlockManagerId，
+      // 需要移除blockManagerIdByExecutor中的BlockManagerId
       // 根据BlockManager对应的ExecutorId（BlockManagerId包含有成员变量executorID）找到对应的BlockManagerId
-      // 如果匹配到则移除以前的注册过的旧数据
+      // 如果匹配到则移除以前的注册过的旧数据，确保每个Executor最多只能有一个blockManagerId
+      // 旧的blockManagerId会被移除
       blockManagerIdByExecutor.get(id.executorId) match {
         case Some(oldId) =>
           // A block manager of the same executor already exists, so remove it (assumed dead)

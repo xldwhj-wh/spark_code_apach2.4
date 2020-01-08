@@ -70,12 +70,17 @@ import org.apache.spark.util._
  * @param config a Spark Config object describing the application configuration. Any settings in
  *   this config overrides the default configs as well as system properties.
  */
+// SparkContext的主构造器参数为SparkConf
 class SparkContext(config: SparkConf) extends Logging {
 
   // The call site where this SparkContext was constructed.
   private val creationSite: CallSite = Utils.getCallSite()
 
   // If true, log warnings instead of throwing exceptions when multiple SparkContexts are active
+  // SparkContext默认只有一个实例，由属性spark.driver.allowMultipleContexts控制，
+  // 用户需要多个SparkContext实例时，可以将其设置为true
+  // 目前在一个JVM进程中可以创建多个SparkContext，但是只能有一个active级别的。
+  // 如果你需要创建一个新的SparkContext实例，必须先调用stop方法停掉当前active级别的SparkContext实例。
   private val allowMultipleContexts: Boolean =
     config.getBoolean("spark.driver.allowMultipleContexts", false)
 
@@ -237,6 +242,9 @@ class SparkContext(config: SparkConf) extends Logging {
   private[spark] def eventLogDir: Option[URI] = _eventLogDir
   private[spark] def eventLogCodec: Option[String] = _eventLogCodec
 
+  // 判断是否是local模式
+  // val master = conf.get("spark.master", "")
+  // master == "local" || master.startsWith("local[")
   def isLocal: Boolean = Utils.isLocalMaster(_conf)
 
   /**
@@ -254,6 +262,11 @@ class SparkContext(config: SparkConf) extends Logging {
       conf: SparkConf,
       isLocal: Boolean,
       listenerBus: LiveListenerBus): SparkEnv = {
+    // 创建安全管理器SecurityManager
+    // 在此处会创建Map任务输出跟踪器mapOutputTracker
+    // 实例化ShuffleManager
+    // 创建块传输服务BlockTransferService
+    // 创建BlockManagerMaster、块管理器BlockManager、广播管理器BroadcastManager
     SparkEnv.createDriverEnv(conf, isLocal, listenerBus, SparkContext.numDriverCores(master, conf))
   }
 
@@ -363,9 +376,12 @@ class SparkContext(config: SparkConf) extends Logging {
 
   // 代码块，每次构造SparkContext时都会执行
   try {
+    // 对SparkConf进行复制，然后对各种配置信息进行校验
     _conf = config.clone()
     _conf.validateSettings()
 
+    // 构建SparkContext必须使用setAppName和setMaster设置下面两个属性，
+    // 否则会抛出如下错误
     if (!_conf.contains("spark.master")) {
       throw new SparkException("A master URL must be set in your configuration")
     }

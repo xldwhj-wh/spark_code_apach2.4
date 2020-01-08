@@ -30,6 +30,11 @@ import org.apache.spark.util.{ThreadUtils, Utils}
  * this is used to remove blocks from the slave's BlockManager.
  */
 private[storage]
+/**
+  * Driver和Executor都有属于自己的BlockManagerSlaveEndpoint
+  * 接收来自BlockManagerMasterEndpoint下发的命令
+  * 包括删除block、获取block状态、获取匹配的blockId等
+  */
 class BlockManagerSlaveEndpoint(
     override val rpcEnv: RpcEnv,
     blockManager: BlockManager,

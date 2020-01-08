@@ -299,6 +299,8 @@ object SparkEnv extends Logging {
       }
     }
 
+    // 创建广播管理器BroadcastManager
+    // 必须在初始化方法被调用后，才能生效
     val broadcastManager = new BroadcastManager(isDriver, conf, securityManager)
 
     val mapOutputTracker = if (isDriver) {

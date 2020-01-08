@@ -252,7 +252,7 @@ private[spark] class BlockManager(
 
     // 为当前这个BlockManager创建一个唯一的BlockManagerId
     // 根据给定参数为对应的Executor封装一个BlockManagerId对象（块存储的唯一标识）
-    // 传入参数有executorId（每个BlockManager都关联一个Executor）
+    // 传入参数有executorId（每个BlockManager都关联一个Executor）、Driver端的executorId为driver，Executor由Master负责分配
     // blockTransferService.hostName(传输Block数据的服务的主机名)
     // blockTransferService.port(传输Block数据的服务的主机名)
     // 从BlockManagerId的初始化可以看出一个BlockManager是通过节点上的executor来进行唯一标识的
@@ -265,6 +265,8 @@ private[spark] class BlockManager(
       id,
       maxOnHeapMemory,
       maxOffHeapMemory,
+      // slaveEndpoint即为BlockManagerSlaveEndpoint，
+      // 用于接收BlockManagerMasterEndpoint回复的消息
       slaveEndpoint)
 
     // 更新blockManagerId的值
