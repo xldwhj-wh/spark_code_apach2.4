@@ -140,6 +140,7 @@ private[spark] class SparkSubmit extends Logging {
    */
   @tailrec
   private def submit(args: SparkSubmitArguments, uninitLog: Boolean): Unit = {
+    // 重点关注childMainClass类，以standalone-cluster为例
     val (childArgs, childClasspath, sparkConf, childMainClass) = prepareSubmitEnvironment(args)
 
     def doRunMain(): Unit = {
@@ -824,7 +825,7 @@ private[spark] class SparkSubmit extends Logging {
         }
         throw new SparkUserAppException(CLASS_NOT_FOUND_EXIT_STATUS)
     }
-
+    // 将mainClass映射为一个SparkApplication
     val app: SparkApplication = if (classOf[SparkApplication].isAssignableFrom(mainClass)) {
       mainClass.newInstance().asInstanceOf[SparkApplication]
     } else {
@@ -846,6 +847,7 @@ private[spark] class SparkSubmit extends Logging {
     }
 
     try {
+      // 调用start方法，这里调用的是mainClass对应的ClientApp的start方法
       app.start(childArgs.toArray, sparkConf)
     } catch {
       case t: Throwable =>

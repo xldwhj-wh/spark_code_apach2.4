@@ -288,6 +288,8 @@ object SparkEnv extends Logging {
 
     val closureSerializer = new JavaSerializer(conf)
 
+    // 如果当前应用程序是Driver，则创建BlockManagerMasterEndpoint，并且注册到RpcEnv中；
+    // 如果当前应用程序是Executor，则从RpcEnv中找到BlockManagerMasterEndpoint的引用。
     def registerOrLookupEndpoint(
         name: String, endpointCreator: => RpcEndpoint):
       RpcEndpointRef = {
@@ -346,8 +348,10 @@ object SparkEnv extends Logging {
       new NettyBlockTransferService(conf, securityManager, bindAddress, advertiseAddress,
         blockManagerPort, numUsableCores)
 
-    // Driver端，管理整个集群的BlockManger
-    val blockManagerMaster = new BlockManagerMaster(registerOrLookupEndpoint(
+    // Driver上的BlockManagerMaster对Executor上的BlockManager统一管理,对数据块的信息进行更新
+    // 实际上是Executor持有BlockManagerMasterEndpoint的引用，通过向
+    // BlockManagerMasterEndpoint发送消息来进行注册等
+    val blockManagerMaster: BlockManagerMaster = new BlockManagerMaster(registerOrLookupEndpoint(
       BlockManagerMaster.DRIVER_ENDPOINT_NAME,
       new BlockManagerMasterEndpoint(rpcEnv, isLocal, conf, listenerBus)),
       conf, isDriver)
@@ -355,6 +359,8 @@ object SparkEnv extends Logging {
     // NB: blockManager is not valid until initialize() is called later.
     // 创建blockManager，包含远程数据传输服务blockTransferService
     // 当blockManager调用initialize()方法初始化时真正有效
+    // blockManager存在于Driver和Executor节点上
+    // 当为Driver时，executorId为Driver
     val blockManager = new BlockManager(executorId, rpcEnv, blockManagerMaster,
       serializerManager, conf, memoryManager, mapOutputTracker, shuffleManager,
       blockTransferService, securityManager, numUsableCores)

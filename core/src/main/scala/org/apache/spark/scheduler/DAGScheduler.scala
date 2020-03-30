@@ -341,7 +341,7 @@ private[spark] class DAGScheduler(
       firstJobId: Int): ShuffleMapStage = {
     shuffleIdToMapStage.get(shuffleDep.shuffleId) match {
       // 存在一个ShuffleMapStage与ShuffleDependency对应，那么直接返回
-      // 由于每一次都遍历建立其父ShuffleDependency对应的ShuffleMapStage，该处过滤掉已经创建的stage
+      // 由于每一次都遍历循环建立其父ShuffleDependency对应的ShuffleMapStage，该处过滤掉已经创建的stage
       case Some(stage) =>
         stage
 
@@ -471,7 +471,7 @@ private[spark] class DAGScheduler(
    */
   // 返回该RDD之前依赖的所有父Stage
   private def getOrCreateParentStages(rdd: RDD[_], firstJobId: Int): List[Stage] = {
-    // getShuffleDependencies方法获得RDD直接相关的ShuffleDependencies(最近的ShuffleDependencies)
+    // getShuffleDependencies方法获得与当前RDD相关的ShuffleDependencies(最近的ShuffleDependencies)
     // 如果该RDD其与上一个RDD的关系为窄依赖，则继续向上遍历直到寻找到所有与其相关的ShuffleDependencies
     getShuffleDependencies(rdd).map { shuffleDep =>
       // getOrCreateShuffleMapStage获得或者新建一个ShuffleDependence依赖的所有ShuffleMapStage。
@@ -781,6 +781,7 @@ private[spark] class DAGScheduler(
       case scala.util.Success(_) =>
         logInfo("Job %d finished: %s, took %f s".format
           (waiter.jobId, callSite.shortForm, (System.nanoTime - start) / 1e9))
+        // job失败不会重试
       case scala.util.Failure(exception) =>
         logInfo("Job %d failed: %s, took %f s".format
           (waiter.jobId, callSite.shortForm, (System.nanoTime - start) / 1e9))

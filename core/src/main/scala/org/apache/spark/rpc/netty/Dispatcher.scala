@@ -43,6 +43,7 @@ private[netty] class Dispatcher(nettyEnv: NettyRpcEnv, numUsableCores: Int) exte
       val endpoint: RpcEndpoint,
       val ref: NettyRpcEndpointRef) {
     // 此处构造Inbox类对象,inbox.synchronized中发送消息OnStart
+    // 将Endpoint封装到Inbox中
     val inbox = new Inbox(ref, endpoint)
   }
 
@@ -74,6 +75,8 @@ private[netty] class Dispatcher(nettyEnv: NettyRpcEnv, numUsableCores: Int) exte
       }
       val data = endpoints.get(name)
       endpointRefs.put(data.endpoint, data.ref)
+      // receivers这个消息队列中放着应该去那个Endpoint中获取Message处理
+      // 其实就是进入Dispatcher当前这个类中的MessageLoop方法
       receivers.offer(data)  // for the OnStart message
     }
     endpointRef
@@ -220,6 +223,7 @@ private[netty] class Dispatcher(nettyEnv: NettyRpcEnv, numUsableCores: Int) exte
               receivers.offer(PoisonPill)
               return
             }
+            // 调用process处理消息
             data.inbox.process(Dispatcher.this)
           } catch {
             case NonFatal(e) => logError(e.getMessage, e)

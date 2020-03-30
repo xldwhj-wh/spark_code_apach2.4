@@ -101,6 +101,7 @@ private[spark] class StandaloneSchedulerBackend(
     // Start executors with a few necessary configs for registering with the scheduler
     val sparkJavaOpts = Utils.sparkJavaOpts(conf, SparkConf.isExecutorStartupConf)
     val javaOpts = sparkJavaOpts ++ extraJavaOpts
+    // 注意此处的command对应启动的Executor就是org.apache.spark.executor.CoarseGrainedExecutorBackend
     val command = Command("org.apache.spark.executor.CoarseGrainedExecutorBackend",
       args, sc.executorEnvs, classPathEntries ++ testingClassPath, libraryPathEntries, javaOpts)
     val webUrl = sc.ui.map(_.webUrl).getOrElse("")
@@ -113,10 +114,9 @@ private[spark] class StandaloneSchedulerBackend(
       } else {
         None
       }
-    // 注意此处传入的command变量，这个command就是CoarseGrainedExecutorBackend这个类。104行代码处
     // Application注册时把这个command也提交给了Master
     // master发指令给Worker去启动Excutor所在的进程的时候加载main方法所在的入口类
-    // 该入口类就是command中的CoarseGrainedExcutorBackend;
+    // 该入口类就是command中的CoarseGrainedExecutorBackend;
     val appDesc = ApplicationDescription(sc.appName, maxCores, sc.executorMemory, command,
       webUrl, sc.eventLogDir, sc.eventLogCodec, coresPerExecutor, initialExecutorLimit)
     // 创建StandaloneAppClient并调用client的start方法进行启动

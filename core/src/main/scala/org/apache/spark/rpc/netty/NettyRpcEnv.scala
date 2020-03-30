@@ -52,10 +52,12 @@ private[netty] class NettyRpcEnv(
     "rpc",
     conf.getInt("spark.rpc.io.threads", numUsableCores))
 
+  // dispatcher对象中有消息队列和消息的循环获取转发
   private val dispatcher: Dispatcher = new Dispatcher(this, numUsableCores)
 
   private val streamManager = new NettyStreamManager(this)
 
+  //
   private val transportContext = new TransportContext(transportConf,
     new NettyRpcHandler(dispatcher, this, streamManager))
 
@@ -109,6 +111,7 @@ private[netty] class NettyRpcEnv(
     }
   }
 
+  // 启动Rpc服务
   def startServer(bindAddress: String, port: Int): Unit = {
     val bootstraps: java.util.List[TransportServerBootstrap] =
       if (securityManager.isAuthenticationEnabled()) {
@@ -116,6 +119,8 @@ private[netty] class NettyRpcEnv(
       } else {
         java.util.Collections.emptyList()
       }
+    // transportContext已经在之前new NettyRpcEnv时创建完
+    // 此处会使用transportContext的createServer方法绑定地址和端口，启动Netty Rpc服务
     server = transportContext.createServer(bindAddress, port, bootstraps)
     dispatcher.registerRpcEndpoint(
       RpcEndpointVerifier.NAME, new RpcEndpointVerifier(this, dispatcher))
@@ -462,6 +467,7 @@ private[rpc] class NettyRpcEnvFactory extends RpcEnvFactory with Logging {
       new NettyRpcEnv(sparkConf, javaSerializerInstance, config.advertiseAddress,
         config.securityManager, config.numUsableCores)
     if (!config.clientMode) {
+      // 启动nettyRpcEnv
       val startNettyRpcEnv: Int => (NettyRpcEnv, Int) = { actualPort =>
         nettyEnv.startServer(config.bindAddress, actualPort)
         (nettyEnv, nettyEnv.address.port)

@@ -40,6 +40,7 @@ object DriverWrapper extends Logging {
        * uses this class to launch the driver, the ordering and semantics of the arguments
        * here must also remain consistent across versions.
        */
+        // 此处的mainClass是我们真正提交的application程序
       case workerUrl :: userJar :: mainClass :: extraArgs =>
         val conf = new SparkConf()
         val host: String = Utils.localHostName()
@@ -61,7 +62,13 @@ object DriverWrapper extends Logging {
 
         // Delegate to supplied main class
         val clazz = Utils.classForName(mainClass)
+        // 得到提交的application主方法，我们提交的代码主程序
         val mainMethod = clazz.getMethod("main", classOf[Array[String]])
+        /**
+          * 该处启动提交的application 中的main方法
+          * 这里启动application，会先创建代码中SparkConf和SparkContext
+          * 在SparkContext中会进行TaskScheduler等初始化操作
+          */
         mainMethod.invoke(null, extraArgs.toArray[String])
 
         rpcEnv.shutdown()

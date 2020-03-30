@@ -77,6 +77,7 @@ private[netty] class Inbox(
   private var numActiveThreads = 0
 
   // OnStart should be the first message to process
+  // 注册endPoint时都会调用这个异步方法，message放入一个样例类消息队列
   // 发送OnStart方法给process
   inbox.synchronized {
     messages.add(OnStart)

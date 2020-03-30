@@ -40,6 +40,7 @@ private[spark] object RpcEnv {
       conf: SparkConf,
       securityManager: SecurityManager,
       clientMode: Boolean = false): RpcEnv = {
+    // 创建RPC环境
     create(name, host, host, port, conf, securityManager, 0, clientMode)
   }
 
@@ -54,6 +55,7 @@ private[spark] object RpcEnv {
       clientMode: Boolean): RpcEnv = {
     val config = RpcEnvConfig(conf, name, bindAddress, advertiseAddress, port, securityManager,
       numUsableCores, clientMode)
+    // NettyRpcEnvFactory的create方法用来创建RpcEnv
     new NettyRpcEnvFactory().create(config)
   }
 }

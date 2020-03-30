@@ -89,8 +89,10 @@ object Partitioner {
 
     // If the existing max partitioner is an eligible one, or its partitions number is larger
     // than the default number of partitions, use the existing partitioner.
-    // 如果hasMaxPartitioner（拥有最大分区数的父RDD使用的分区器）
-    // 存在并且可用或者其分区数大于默认分区数（spark.default.parallelism的值）
+    // 如果hasMaxPartitioner（拥有最大分区数的父RDD使用的分区器）存在
+    // 并且可用isEligiblePartitioner(hasMaxPartitioner.get, rdds)
+    // 判断逻辑是其分区数与所有上游RDD中最大分区数之差小于一个数量级
+    // 或者其分区数大于默认分区数（spark.default.parallelism的值）
     // 使用该父RDD的分区器作为子RDD的分区器，
     if (hasMaxPartitioner.nonEmpty && (isEligiblePartitioner(hasMaxPartitioner.get, rdds) ||
         defaultNumPartitions < hasMaxPartitioner.get.getNumPartitions)) {

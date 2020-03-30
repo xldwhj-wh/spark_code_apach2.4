@@ -127,6 +127,7 @@ public class TransportServer implements Closeable {
         for (TransportServerBootstrap bootstrap : bootstraps) {
           rpcHandler = bootstrap.doBootstrap(ch, rpcHandler);
         }
+        // 初始化网络通信管道
         context.initializePipeline(ch, rpcHandler);
       }
     });

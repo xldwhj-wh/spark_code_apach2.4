@@ -433,6 +433,7 @@ private[deploy] class Master(
 
   override def receiveAndReply(context: RpcCallContext): PartialFunction[Any, Unit] = {
     case RequestSubmitDriver(description) =>
+      // 判断Master的状态
       if (state != RecoveryState.ALIVE) {
         val msg = s"${Utils.BACKUP_STANDALONE_MASTER_PREFIX}: $state. " +
           "Can only accept driver submissions in ALIVE state."
@@ -441,6 +442,7 @@ private[deploy] class Master(
         logInfo("Driver submitted " + description.command.mainClass)
         val driver = createDriver(description)
         persistenceEngine.addDriver(driver)
+        // 待启动的Driver
         waitingDrivers += driver
         drivers.add(driver)
         schedule()
@@ -780,7 +782,7 @@ private[deploy] class Master(
     // 且对于当前的application只能在一个worker上启动该app的一个executor进程）后续判断，
     // 并且oneExecutorPerWorker机制不检查内存的限制】
     val oneExecutorPerWorker = coresPerExecutor.isEmpty
-    // 配置中每个Executor的内存
+    // 配置中每个Executor的内存，提交命令中指定--executor-memory则使用指定的参数，否则默认为1024M
     val memoryPerExecutor = app.desc.memoryPerExecutorMB
     // 可用worker的数量
     val numUsable = usableWorkers.length
@@ -803,7 +805,8 @@ private[deploy] class Master(
       // If we allow multiple executors per worker, then we can always launch new executors.
       // Otherwise, if there is already an executor on this worker, just give it more cores.
       // 在这个Worker上没有启动Executor，或者一个Executor上需要多个cores。
-      // oneExecutorPerWorker=false,则说明一个Executor上需要多个cores
+      // oneExecutorPerWorker=false,则说明一个Executor上需要多个cores,此时需要启动新的Executor
+      // 否则判断该Worker节点是否已经启动Executor，如果启动则不需要重新启动新的Executor
       val launchingNewExecutor = !oneExecutorPerWorker || assignedExecutors(pos) == 0
       if (launchingNewExecutor) {
         // worker已经分配的memory，该worker上启动的Executors个数 * 每个Executor的内存
@@ -834,7 +837,7 @@ private[deploy] class Master(
       freeWorkers.foreach { pos =>
         var keepScheduling = true
         while (keepScheduling && canLaunchExecutor(pos)) {
-          // 循环一次重新计算可分配的核数
+          // 循环一次重新计算需要分配的核数
           coresToAssign -= minCoresPerExecutor
           // 如果每个Worker只启动一个Executor(即minCoresPerExecutor的值为1)
           // 那么每一次循环给这个Executor分配一个core
@@ -878,7 +881,8 @@ private[deploy] class Master(
     // in the queue, then the second app, etc.
     // 遍历waitingApps中的ApplicationInfo，进行Application的资源调度
     for (app <- waitingApps) {
-      // 使用--executor-cores或spark.executor.cores属性指定核心数coresPerExecutor。
+      // 使用--total-executor-cores 指定所有Executor使用core的总个数
+      // 使用--executor-cores或spark.executor.cores属性指定每个Executor的核心数coresPerExecutor。
       // 使用--executor-memory参数或spark.executor.memory属性配置堆大小
       // coresPerExecutor未设置则默认为1个core
       val coresPerExecutor = app.desc.coresPerExecutor.getOrElse(1)
@@ -886,8 +890,9 @@ private[deploy] class Master(
       // 调度的Application剩余需要的core数量大于等于coresPerExecutor时进行调度
       // 即分配Executor之前要判断应用程序是否还需要分配Core如果不需要则不会为应用程序分配Executor
       // 如果调度的Application剩余需要的core数量小于executor需要的core数量，则Applicatioon剩余的core将不会被分配。
-      // coresLeft=当前app申请的maxcpus - granted的cpus，
-      // maxcpus由参数spark.cores.max配置文件设置决定
+      // coresLeft=当前app申请的maxcpus - granted的cpus（requestedCores - coresGranted），
+      // maxcpus由参数spark.cores.max配置文件设置或者--total-executor-cores决定
+      // 如果以上什么都不指定，则会占用所有Worker上可以分配的cores
       if (app.coresLeft >= coresPerExecutor) {
         // Filter out workers that don't have enough resources to launch an executor
         // 过滤掉存活但是剩余 core/内存 不足以启动一个Executor的worker
@@ -899,7 +904,7 @@ private[deploy] class Master(
           .sortBy(_.coresFree).reverse
         // Application的调度算法有两种，一种是spreadOutApps，另一种是非spreadOutApps
         // spreadOutApps通过配置文件spark.deploy.spreadOut定义，默认为true
-        // assignedCores为每个Worker所需要调用的cores的array集合
+        // assignedCores为每个Worker所需要分配的cores的array集合
         // 调用scheduleExecutorsOnWorkers方法进行Executor资源分配
         val assignedCores = scheduleExecutorsOnWorkers(app, usableWorkers, spreadOutApps)
 
@@ -964,9 +969,10 @@ private[deploy] class Master(
     val numWorkersAlive = shuffledAliveWorkers.size
     var curPos = 0
     // 首先，针对Driver进行调度，什么情况下才会进行Driver的注册？
-    // 只有用yarn-cluster模式提交的时候才会注册Driver
-    // 因为standAlone和yarn-client模式，都会在本地直接启动Driver，而不会来注册Driver，就更不可能让master调度Driver了
-    // 遍历waitingDrivers中所有Driver进行资源调度
+    // 只有用cluster模式提交的时候才会注册Driver
+    // 因为client模式下会在本地直接启动Driver，而不会来注册Driver，就更不可能让master调度Driver了
+    // 遍历waitingDrivers中所有Driver进行资源调度,提交一次Application只会生成一个Driver
+    // 所以此处循环最多遍历一次
     for (driver <- waitingDrivers.toList) { // iterate over a copy of waitingDrivers
       // We assign workers to each waiting driver in a round-robin fashion. For each driver, we
       // start from the last worker that was assigned a driver, and continue onwards until we have
@@ -980,6 +986,7 @@ private[deploy] class Master(
         numWorkersVisited += 1
         // 如果当前worker的内存空闲量大于等于driver需要的内存
         // 并且当前worker的cpu数量，大于等于driver所需要的cpu数量
+        // driver端默认1core、1cpu，可使用--driver-memory和--driver-cores指定
         if (worker.memoryFree >= driver.desc.mem && worker.coresFree >= driver.desc.cores) {
           // 那么就启动driver
           launchDriver(worker, driver)
@@ -1317,6 +1324,9 @@ private[deploy] object Master extends Logging {
     Utils.initDaemon(log)
     val conf = new SparkConf
     val args = new MasterArguments(argStrings, conf)
+    /**
+      * 创建RPC环境和Endpoint（RPC远程过程调用），在Spark中 Driver，Master，Worker角色都有自己的RPC环境
+      */
     val (rpcEnv, _, _) = startRpcEnvAndEndpoint(args.host, args.port, args.webUiPort, conf)
     rpcEnv.awaitTermination()
   }
@@ -1333,7 +1343,22 @@ private[deploy] object Master extends Logging {
       webUiPort: Int,
       conf: SparkConf): (RpcEnv, Int, Option[Int]) = {
     val securityMgr = new SecurityManager(conf)
+    /**
+      * 创建RPC环境，后边向RpcEnv进行注册，角色【Master、Driver、Worker、Executor】
+      */
     val rpcEnv = RpcEnv.create(SYSTEM_NAME, host, port, conf, securityMgr)
+    /**
+      * 向RpcEnv中注册Master（rpcEnv.setupEndpoint）
+      * Endpoint中包括
+      *   onstart()启动当前Endpoint
+      *   receive()负责接收消息
+      *   receiveAndReply()负责接收消息并回复
+      * Endpoint还互相有各自的引用，方便Endpoint之间发送消息，直接引用对方的EndpointRef即可找到对方
+      * 以下masterEndpoint就是Master的Endpoint引用RpcEndpointRef
+      * RpcEndpointRef中存在
+      *   send()发送消息
+      *   ask()请求消息，并等待回应
+      */
     val masterEndpoint = rpcEnv.setupEndpoint(ENDPOINT_NAME,
       new Master(rpcEnv, rpcEnv.address, webUiPort, securityMgr, conf))
     val portsResponse = masterEndpoint.askSync[BoundPortsResponse](BoundPortsRequest)

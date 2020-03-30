@@ -431,6 +431,7 @@ class SparkContext(config: SparkConf) extends Logging {
       }
     }
 
+    // 时间总线，接收各个使用方的事件
     _listenerBus = new LiveListenerBus(_conf)
 
     // Initialize the app status store and listener before SparkEnv is created so that it gets
@@ -482,6 +483,7 @@ class SparkContext(config: SparkConf) extends Logging {
       files.foreach(addFile)
     }
 
+    // 默认每个Executor启动内存为1024M
     _executorMemory = _conf.getOption("spark.executor.memory")
       .orElse(Option(System.getenv("SPARK_EXECUTOR_MEMORY")))
       .orElse(Option(System.getenv("SPARK_MEM"))
@@ -517,6 +519,7 @@ class SparkContext(config: SparkConf) extends Logging {
     _taskScheduler = ts
     // 初始化DAGScheduler
     _dagScheduler = new DAGScheduler(this)
+    // 初始化后向HeartbeatReceiver发送TaskSchedulerIsSet消息
     _heartbeatReceiver.ask[Boolean](TaskSchedulerIsSet)
 
     // start TaskScheduler after taskScheduler sets DAGScheduler reference in DAGScheduler's
@@ -563,12 +566,12 @@ class SparkContext(config: SparkConf) extends Logging {
               schedulerBackend.asInstanceOf[ExecutorAllocationClient], listenerBus, _conf,
               _env.blockManager.master))
           case _ =>
-            None
-        }
-      } else {
-        None
-      }
-    _executorAllocationManager.foreach(_.start())
+      None
+  }
+} else {
+None
+}
+_executorAllocationManager.foreach(_.start())
 
     _cleaner =
       if (_conf.getBoolean("spark.cleaner.referenceTracking", true)) {
@@ -2785,7 +2788,9 @@ object SparkContext extends Logging {
         val scheduler = new TaskSchedulerImpl(sc)
         val masterUrls = sparkUrl.split(",").map("spark://" + _)
         val backend = new StandaloneSchedulerBackend(scheduler, sc, masterUrls)
+        // 调用TaskSchedulerImpl对象中的initialize方法将backend初始化
         scheduler.initialize(backend)
+        // 返回StandaloneSchedulerBackend和TaskSchedulerImpl两个对象
         (backend, scheduler)
 
         // 伪分布式模式

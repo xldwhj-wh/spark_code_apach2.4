@@ -414,7 +414,7 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val rpcEnv: Rp
     }
 
     // TODO (prashant) send conf instead of properties
-    // 创建DriverEndpoint内部类消息实体,向Rpc中注册当前DriverEndpoint
+    // 创建Driver的Endpoint内部类消息实体,向Rpc中注册当前DriverEndpoint
     // DriverEndpoint用于提交task到Executor，接收Executor返回的计算结果
     // executor就是向DriverEndpoint中反向注册信息，
     // 这里Driver中的receiveAndReply方法一直监听匹配发过来的信息进行后续处理

@@ -93,6 +93,7 @@ private class ClientEndpoint(
           driverArgs.cores,
           driverArgs.supervise,
           command)
+        // 向Master申请启动Driver，Master中的receiveAndReply方法会接收此消息并等待回复
         asyncSendToMasterAndForwardReply[SubmitDriverResponse](
           RequestSubmitDriver(driverDescription))
 
@@ -231,11 +232,13 @@ private[spark] class ClientApp extends SparkApplication {
     }
     Logger.getRootLogger.setLevel(driverArgs.logLevel)
 
+    // 创建rpc通信环境
     val rpcEnv =
       RpcEnv.create("driverClient", Utils.localHostName(), 0, conf, new SecurityManager(conf))
-
+    // 得到master的通信masterEndpoints
     val masterEndpoints = driverArgs.masters.map(RpcAddress.fromSparkURL).
       map(rpcEnv.setupEndpointRef(_, Master.ENDPOINT_NAME))
+    //在rpc中设置提交当前任务的Endpoint，设置会运行ClientEndpoint的onStart方法
     rpcEnv.setupEndpoint("client", new ClientEndpoint(rpcEnv, driverArgs, masterEndpoints, conf))
 
     rpcEnv.awaitTermination()

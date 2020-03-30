@@ -595,6 +595,7 @@ private[deploy] class Worker(
         securityMgr)
       drivers(driverId) = driver
       // 调用DriverRunner的start方法
+      // 会初始化command里的org.apache.apache.deploy.worker.DriverWrapper，运行main方法
       driver.start()
       // worker已使用的core加上分配给driver的core
       coresUsed += driverDesc.cores
@@ -784,6 +785,7 @@ private[deploy] object Worker extends Logging {
     Utils.initDaemon(log)
     val conf = new SparkConf
     val args = new WorkerArguments(argStrings, conf)
+    // 创建基础rpc环境
     val rpcEnv = startRpcEnvAndEndpoint(args.host, args.port, args.webUiPort, args.cores,
       args.memory, args.masters, args.workDir, conf = conf)
     // With external shuffle service enabled, if we request to launch multiple workers on one host,
