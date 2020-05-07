@@ -63,10 +63,11 @@ private[spark] class CoarseGrainedExecutorBackend(
   // CoarseGrainedExecutorBackend初始化时调用onStart方法
   override def onStart() {
     logInfo("Connecting to driver: " + driverUrl)
+    // 从RPC中拿到Driver的引用，给Driver反向注册Executor
     rpcEnv.asyncSetupEndpointRefByURI(driverUrl).flatMap { ref =>
       // This is a very fast action so we can use "ThreadUtils.sameThread"
       driver = Some(ref)
-      // 启动起来之后向Driver发送RegisterExecutor消息
+      // 启动之前先向Driver发送RegisterExecutor消息
       // 反向向CoarseGrainedSchedulerBackend注册
       // 实际上是向通信实体DriverEndpoint发送RegisterExecutor消息注册给Driver
       ref.ask[Boolean](RegisterExecutor(executorId, self, hostname, cores, extractLogUrls))

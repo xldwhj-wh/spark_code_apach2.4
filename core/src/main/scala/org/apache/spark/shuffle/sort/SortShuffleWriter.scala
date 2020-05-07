@@ -69,7 +69,7 @@ private[spark] class SortShuffleWriter[K, V, C](
     val output = shuffleBlockResolver.getDataFile(dep.shuffleId, mapId)
     val tmp = Utils.tempFileWith(output)
     try {
-      // 获取blockId即每一份数据要写入那个bucket中
+      // 获取blockId，即每一份数据要写入哪个bucket中
       val blockId = ShuffleBlockId(dep.shuffleId, mapId, IndexShuffleBlockResolver.NOOP_REDUCE_ID)
       val partitionLengths = sorter.writePartitionedFile(blockId, tmp)
       shuffleBlockResolver.writeIndexFileAndCommit(dep.shuffleId, mapId, partitionLengths, tmp)
@@ -108,9 +108,13 @@ private[spark] class SortShuffleWriter[K, V, C](
 private[spark] object SortShuffleWriter {
   def shouldBypassMergeSort(conf: SparkConf, dep: ShuffleDependency[_, _, _]): Boolean = {
     // We cannot bypass sorting if we need to do map-side aggregation.
+    // 需要聚合的算子的mapSideCombine为ture，创建shuffleRDD时设置mapSideCombine属性为ture
+    // 调用getDependencies方法时创建ShuffleDependency会将该属性传入进去
     if (dep.mapSideCombine) {
+      // map端有预聚合，不能使用bypass机制
       false
     } else {
+      // map端没有预聚合，并且分区数小于spark.shuffle.sort.bypassMergeThreshold默认为200，可以使用bypass机制
       val bypassMergeThreshold: Int = conf.getInt("spark.shuffle.sort.bypassMergeThreshold", 200)
       dep.partitioner.numPartitions <= bypassMergeThreshold
     }

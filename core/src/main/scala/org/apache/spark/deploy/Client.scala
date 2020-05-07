@@ -62,10 +62,12 @@ private class ClientEndpoint(
 
   override def onStart(): Unit = {
     driverArgs.cmd match {
+        // 匹配launch进行启动
       case "launch" =>
         // TODO: We could add an env variable here and intercept it in `sc.addJar` that would
         //       truncate filesystem paths similar to what YARN does. For now, we just require
         //       people call `addJar` assuming the jar is in the same directory.
+        //
         val mainClass = "org.apache.spark.deploy.worker.DriverWrapper"
 
         val classPathConf = "spark.driver.extraClassPath"
@@ -83,10 +85,11 @@ private class ClientEndpoint(
           .map(Utils.splitCommandString).getOrElse(Seq.empty)
         val sparkJavaOpts = Utils.sparkJavaOpts(conf)
         val javaOpts = sparkJavaOpts ++ extraJavaOpts
+        // 把mainClass封装进command中
         val command = new Command(mainClass,
           Seq("{{WORKER_URL}}", "{{USER_JAR}}", driverArgs.mainClass) ++ driverArgs.driverOptions,
           sys.env, classPathEntries, libraryPathEntries, javaOpts)
-
+        // 把command封装进DriverDescription中
         val driverDescription = new DriverDescription(
           driverArgs.jarUrl,
           driverArgs.memory,
@@ -232,13 +235,14 @@ private[spark] class ClientApp extends SparkApplication {
     }
     Logger.getRootLogger.setLevel(driverArgs.logLevel)
 
-    // 创建rpc通信环境
+    // 创建rpc通信环境，创建driverClient客户端
     val rpcEnv =
       RpcEnv.create("driverClient", Utils.localHostName(), 0, conf, new SecurityManager(conf))
     // 得到master的通信masterEndpoints
     val masterEndpoints = driverArgs.masters.map(RpcAddress.fromSparkURL).
       map(rpcEnv.setupEndpointRef(_, Master.ENDPOINT_NAME))
-    //在rpc中设置提交当前任务的Endpoint，设置会运行ClientEndpoint的onStart方法
+    // 在rpc中使用setupEndpoint设置提交当前任务的Endpoint
+    // setupEndpoint操作会运行ClientEndpoint的onStart方法
     rpcEnv.setupEndpoint("client", new ClientEndpoint(rpcEnv, driverArgs, masterEndpoints, conf))
 
     rpcEnv.awaitTermination()

@@ -475,7 +475,7 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val rpcEnv: Rp
   }
 
   override def reviveOffers() {
-    // receive接收到ReviveOffers消息调用makeOffers方法
+    // 给Driver提交Task，receive接收到ReviveOffers消息调用makeOffers方法
     driverEndpoint.send(ReviveOffers)
   }
 

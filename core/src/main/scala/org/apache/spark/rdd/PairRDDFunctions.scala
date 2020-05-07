@@ -69,9 +69,9 @@ class PairRDDFunctions[K, V](self: RDD[(K, V)])
    */
   @Experimental
   def combineByKeyWithClassTag[C](
-      createCombiner: V => C,
-      mergeValue: (C, V) => C,
-      mergeCombiners: (C, C) => C,
+      createCombiner: V => C,// 创建combiner
+      mergeValue: (C, V) => C,// map端聚合
+      mergeCombiners: (C, C) => C,// reduce端聚合
       partitioner: Partitioner,
       mapSideCombine: Boolean = true,
       serializer: Serializer = null)(implicit ct: ClassTag[C]): RDD[(K, C)] = self.withScope {
@@ -88,12 +88,16 @@ class PairRDDFunctions[K, V](self: RDD[(K, V)])
       self.context.clean(createCombiner),
       self.context.clean(mergeValue),
       self.context.clean(mergeCombiners))
+    // 判断分区器是否相同，如果两个连着的shuffle类算子分区器都是相同的，
+    // 那么不会产生shuffle，否则会生成shuffleRDD
     if (self.partitioner == Some(partitioner)) {
       self.mapPartitions(iter => {
         val context = TaskContext.get()
         new InterruptibleIterator(context, aggregator.combineValuesByKey(iter, context))
       }, preservesPartitioning = true)
     } else {
+      // 下面设置的aggregator就是以上三个combiner的函数
+      // 在shuffleRDD可以使用getDependencies获取宽窄依赖
       new ShuffledRDD[K, V, C](self, partitioner)
         .setSerializer(serializer)
         .setAggregator(aggregator)

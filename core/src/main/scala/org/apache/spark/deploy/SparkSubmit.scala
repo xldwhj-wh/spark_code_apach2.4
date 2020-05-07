@@ -141,6 +141,8 @@ private[spark] class SparkSubmit extends Logging {
   @tailrec
   private def submit(args: SparkSubmitArguments, uninitLog: Boolean): Unit = {
     // 重点关注childMainClass类，以standalone-cluster为例
+    // childMainClass（ClientApp）是后边Driver启动的主类
+    // 四元组初始化完成之后，继续后续代码，执行doRunMain方法
     val (childArgs, childClasspath, sparkConf, childMainClass) = prepareSubmitEnvironment(args)
 
     def doRunMain(): Unit = {
@@ -165,6 +167,7 @@ private[spark] class SparkSubmit extends Logging {
             }
         }
       } else {
+        // 不使用proxyUser，执行runMain方法
         runMain(childArgs, childClasspath, sparkConf, childMainClass, args.verbose)
       }
     }
@@ -621,6 +624,7 @@ private[spark] class SparkSubmit extends Logging {
     // In standalone cluster mode, use the REST client to submit the application (Spark 1.3+).
     // All Spark parameters are expected to be passed to the client through system properties.
     if (args.isStandaloneCluster) {
+      // 使用rest风格，是指使用json格式和http提交任务
       if (args.useRest) {
         childMainClass = REST_CLUSTER_SUBMIT_CLASS
         childArgs += (args.primaryResource, args.mainClass)
@@ -808,6 +812,7 @@ private[spark] class SparkSubmit extends Logging {
     var mainClass: Class[_] = null
 
     try {
+      // 根据传入的childMainClass构建加载mainClass
       mainClass = Utils.classForName(childMainClass)
     } catch {
       case e: ClassNotFoundException =>

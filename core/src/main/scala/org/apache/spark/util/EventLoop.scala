@@ -44,6 +44,7 @@ private[spark] abstract class EventLoop[E](name: String) extends Logging {
     override def run(): Unit = {
       try {
         while (!stopped.get) {
+          // 从队列中取出放入的一个个job
           val event = eventQueue.take()
           try {
             onReceive(event)

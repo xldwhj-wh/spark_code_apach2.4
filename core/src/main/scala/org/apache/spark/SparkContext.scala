@@ -2091,6 +2091,7 @@ _executorAllocationManager.foreach(_.start())
     // 继续调用DagScheduler的runjob方法
     dagScheduler.runJob(rdd, cleanedFunc, partitions, callSite, resultHandler, localProperties.get)
     progressBar.foreach(_.finishAll())
+    // 如果需要checkpoint，则计算完成后从后往前回溯进行checkpoint
     rdd.doCheckpoint()
   }
 

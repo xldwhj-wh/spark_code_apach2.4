@@ -80,13 +80,16 @@ private[spark] class ResultTask[T, U](
       threadMXBean.getCurrentThreadCpuTime
     } else 0L
     val ser = SparkEnv.get.closureSerializer.newInstance()
+    //从广播变量获取rdd和func并进行反序列化ResultTask，结果为rdd,和func函数
+    //taskBinary的值是在DAGScheduler.submitMissingTasks()方法中进行序列化的
     val (rdd, func) = ser.deserialize[(RDD[T], (TaskContext, Iterator[T]) => U)](
       ByteBuffer.wrap(taskBinary.value), Thread.currentThread.getContextClassLoader)
     _executorDeserializeTime = System.currentTimeMillis() - deserializeStartTime
     _executorDeserializeCpuTime = if (threadMXBean.isCurrentThreadCpuTimeSupported) {
       threadMXBean.getCurrentThreadCpuTime - deserializeStartCpuTime
     } else 0L
-
+    // 对rdd中每个parition迭代执行，这里的RDD为ShuffleRDD，会调用ShuffleRDD中的compute()函数
+    // 然后从各个ShuffleMapTask的输出结果中拉取数据处理
     func(context, rdd.iterator(partition, context))
   }
 

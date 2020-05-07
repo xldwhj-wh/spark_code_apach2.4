@@ -182,6 +182,7 @@ private[spark] class TaskSchedulerImpl(
     // Standalone模式调用StandaloneSchedulerBackend的start方法
     // yarn-cluster模式调用YarnClusterSchedulerBackend的start方法
     // yarn-client模式调用YarnClientSchedulerBackend的start方法
+    // 会在CoarseGrainedSchedulerBackend中创建driverEndpoint
     backend.start()
 
     if (!isLocal && conf.getBoolean("spark.speculation", false)) {

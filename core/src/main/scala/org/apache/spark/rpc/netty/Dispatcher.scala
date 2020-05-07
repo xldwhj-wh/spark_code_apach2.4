@@ -62,6 +62,7 @@ private[netty] class Dispatcher(nettyEnv: NettyRpcEnv, numUsableCores: Int) exte
   @GuardedBy("this")
   private var stopped = false
 
+  // 注册Endpoint
   def registerRpcEndpoint(name: String, endpoint: RpcEndpoint): NettyRpcEndpointRef = {
     val addr = RpcEndpointAddress(nettyEnv.address, name)
     val endpointRef = new NettyRpcEndpointRef(nettyEnv.conf, addr, nettyEnv)
@@ -69,7 +70,8 @@ private[netty] class Dispatcher(nettyEnv: NettyRpcEnv, numUsableCores: Int) exte
       if (stopped) {
         throw new IllegalStateException("RpcEnv has been stopped")
       }
-      // 注意new EndpointData构造inbox
+      // 使用new EndpointData构造inbox，使用到了endpoint
+      // 当nex Index时向向消息队列中放入OnStart样例类标识
       if (endpoints.putIfAbsent(name, new EndpointData(name, endpoint, endpointRef)) != null) {
         throw new IllegalArgumentException(s"There is already an RpcEndpoint called $name")
       }
@@ -77,6 +79,8 @@ private[netty] class Dispatcher(nettyEnv: NettyRpcEnv, numUsableCores: Int) exte
       endpointRefs.put(data.endpoint, data.ref)
       // receivers这个消息队列中放着应该去那个Endpoint中获取Message处理
       // 其实就是进入Dispatcher当前这个类中的MessageLoop方法
+      // 当这个方法new Dispatcher后会一直保持
+      // 将消息放入待处理的消息队列中，消息首先找到对应的Endpoin，再会获取当前Endpoint的Inbox中的Message
       receivers.offer(data)  // for the OnStart message
     }
     endpointRef
@@ -217,6 +221,7 @@ private[netty] class Dispatcher(nettyEnv: NettyRpcEnv, numUsableCores: Int) exte
       try {
         while (true) {
           try {
+            // take的消息一直处理
             val data = receivers.take()
             if (data == PoisonPill) {
               // Put PoisonPill back so that other MessageLoops can see it.

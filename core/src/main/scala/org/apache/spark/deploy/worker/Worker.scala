@@ -527,6 +527,7 @@ private[deploy] class Worker(
           })
           appDirectories(appId) = appLocalDirs
           // 将接收到的application中Executor的相关信息封装为一个ExecutorRunner对象
+          // appDesc中有Command（org.apache.spark.executor.CoarseGrainedExecutorBackend）
           val manager = new ExecutorRunner(
             appId,
             execId,
@@ -584,6 +585,7 @@ private[deploy] class Worker(
     case LaunchDriver(driverId, driverDesc) =>
       logInfo(s"Asked to launch driver $driverId")
       // 创建DriverRunner
+      // command = "org.apache.spark.deploy.worker.DriverWrapper"
       val driver = new DriverRunner(
         conf,
         driverId,
@@ -595,7 +597,7 @@ private[deploy] class Worker(
         securityMgr)
       drivers(driverId) = driver
       // 调用DriverRunner的start方法
-      // 会初始化command里的org.apache.apache.deploy.worker.DriverWrapper，运行main方法
+      // 最后会初始化command里的org.apache.apache.deploy.worker.DriverWrapper，运行main方法
       driver.start()
       // worker已使用的core加上分配给driver的core
       coresUsed += driverDesc.cores

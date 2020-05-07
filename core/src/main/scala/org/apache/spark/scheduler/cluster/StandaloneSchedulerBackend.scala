@@ -57,6 +57,7 @@ private[spark] class StandaloneSchedulerBackend(
   private val maxCores = conf.getOption("spark.cores.max").map(_.toInt)
   private val totalExpectedCores = maxCores.getOrElse(0)
 
+  // 提交application的描述信息
   override def start() {
     // 调用父类CoarseGrainedSchedulerBackend中的start方法
     // 使用createDriverEndpointRef方法创建DriverEndpoint这个内部类

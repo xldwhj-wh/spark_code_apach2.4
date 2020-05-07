@@ -75,6 +75,7 @@ class ShuffledRDD[K: ClassTag, V: ClassTag, C: ClassTag](
     this
   }
 
+  // 在划分stage过程中会调用该方法，调用该方法创建ShuffleDependency对象时会registerShuffle
   override def getDependencies: Seq[Dependency[_]] = {
     val serializer = userSpecifiedSerializer.getOrElse {
       val serializerManager = SparkEnv.get.serializerManager
@@ -84,6 +85,7 @@ class ShuffledRDD[K: ClassTag, V: ClassTag, C: ClassTag](
         serializerManager.getSerializer(implicitly[ClassTag[K]], implicitly[ClassTag[V]])
       }
     }
+    // 创建ShuffleDependency对象，会调用registerShuffle方法进行shuffle的注册
     List(new ShuffleDependency(prev, part, serializer, keyOrdering, aggregator, mapSideCombine))
   }
 

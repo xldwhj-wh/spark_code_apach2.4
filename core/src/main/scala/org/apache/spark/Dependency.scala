@@ -90,6 +90,9 @@ class ShuffleDependency[K: ClassTag, V: ClassTag, C: ClassTag](
 
   val shuffleId: Int = _rdd.context.newShuffleId()
 
+  // 创建ShuffleHandle。
+  // registerShuffle中是sortShuffle的实现，在2.0+之后是sortShuffle
+  // 在此处注册shuffle，注册之后，在shuffleMapTask过程中会使用
   val shuffleHandle: ShuffleHandle = _rdd.context.env.shuffleManager.registerShuffle(
     shuffleId, _rdd.partitions.length, this)
 
