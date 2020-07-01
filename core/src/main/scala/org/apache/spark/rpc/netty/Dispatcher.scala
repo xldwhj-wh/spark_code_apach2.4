@@ -38,21 +38,32 @@ import org.apache.spark.util.ThreadUtils
  */
 private[netty] class Dispatcher(nettyEnv: NettyRpcEnv, numUsableCores: Int) extends Logging {
 
+  /**
+    * EndpointDataRPC端点数据，包括Inbox、RpcEndpoint、NettyRpcEndpointRef
+    * @param name
+    * @param endpoint
+    * @param ref
+    */
   private class EndpointData(
       val name: String,
       val endpoint: RpcEndpoint,
       val ref: NettyRpcEndpointRef) {
-    // 此处构造Inbox类对象,inbox.synchronized中发送消息OnStart
-    // 将Endpoint封装到Inbox中
+    // 此处构造Inbox类对象（端点内的盒子）,inbox.synchronized中发送消息OnStart
+    // 将Endpoint封装到Inbox中，每个RpcEndpoint都有一个对应的盒子
+    // 这个盒子里有个存储InboxMessage消息的列表messages
+    // 所有消息缓存在messages列表里，并由RpcEndpoint异步处理这些消息
     val inbox = new Inbox(ref, endpoint)
   }
 
+  // 端点实例名称与端点数据的映射关系
   private val endpoints: ConcurrentMap[String, EndpointData] =
     new ConcurrentHashMap[String, EndpointData]
+  // 端点实例RpcEndpoint与端点实例引用RpcEndpointRef之间的映射关系缓存
   private val endpointRefs: ConcurrentMap[RpcEndpoint, RpcEndpointRef] =
     new ConcurrentHashMap[RpcEndpoint, RpcEndpointRef]
 
   // Track the receivers whose inboxes may contain messages.
+  // 存储端点数据EndpointData的阻塞队列，只有Inbox中有消息的EndpointData才会放入此阻塞队列
   private val receivers = new LinkedBlockingQueue[EndpointData]
 
   /**
@@ -70,19 +81,21 @@ private[netty] class Dispatcher(nettyEnv: NettyRpcEnv, numUsableCores: Int) exte
       if (stopped) {
         throw new IllegalStateException("RpcEnv has been stopped")
       }
-      // 使用new EndpointData构造inbox，使用到了endpoint
-      // 当nex Index时向向消息队列中放入OnStart样例类标识
+      // 创建EndpointData，放入endpoints缓存
+      // 当nex Index时向向其消息列表中放入OnStart消息
       if (endpoints.putIfAbsent(name, new EndpointData(name, endpoint, endpointRef)) != null) {
         throw new IllegalArgumentException(s"There is already an RpcEndpoint called $name")
       }
       val data = endpoints.get(name)
       endpointRefs.put(data.endpoint, data.ref)
-      // receivers这个消息队列中放着应该去那个Endpoint中获取Message处理
+      // receivers这个消息队列中放着应该去那个EndpointData中获取Message处理
       // 其实就是进入Dispatcher当前这个类中的MessageLoop方法
       // 当这个方法new Dispatcher后会一直保持
-      // 将消息放入待处理的消息队列中，消息首先找到对应的Endpoin，再会获取当前Endpoint的Inbox中的Message
+      // 将消息放入待处理的消息队列队尾，MessageLoop线程异步获取到此EndpointData
+      // 并处理其Inbox中刚刚放入的OnStart消息，最终调用RocEndpoint的OnStart方法在RpcEndpoint开始处理消息前做一些准备工作
       receivers.offer(data)  // for the OnStart message
     }
+    // 返回NettyRpcEndpointRef
     endpointRef
   }
 
@@ -202,12 +215,15 @@ private[netty] class Dispatcher(nettyEnv: NettyRpcEnv, numUsableCores: Int) exte
     endpoints.containsKey(name)
   }
 
+  // 用于对消息进行调度的线程池
   /** Thread pool used for dispatching messages. */
   private val threadpool: ThreadPoolExecutor = {
+    // 获取此线程池的大小numThreads
     val availableCores =
       if (numUsableCores > 0) numUsableCores else Runtime.getRuntime.availableProcessors()
     val numThreads = nettyEnv.conf.getInt("spark.rpc.netty.dispatcher.numThreads",
       math.max(2, availableCores))
+    // 创建固定大小的线程池，启动线程池名称以dispatcher-event-loop开头以后台方式运行
     val pool = ThreadUtils.newDaemonFixedThreadPool(numThreads, "dispatcher-event-loop")
     for (i <- 0 until numThreads) {
       pool.execute(new MessageLoop)
@@ -215,6 +231,7 @@ private[netty] class Dispatcher(nettyEnv: NettyRpcEnv, numUsableCores: Int) exte
     pool
   }
 
+  // 在while循环中不断对新的消息进行处理
   /** Message loop used for dispatching messages. */
   private class MessageLoop extends Runnable {
     override def run(): Unit = {
@@ -222,13 +239,16 @@ private[netty] class Dispatcher(nettyEnv: NettyRpcEnv, numUsableCores: Int) exte
         while (true) {
           try {
             // take的消息一直处理
+            // 由于只有Inbox的messages列表中有了新的消息，此EndpointData才会放入receives中
+            // 因此从receivers中获取EndpointData。其Inbox的messages列表中肯定有新消息
             val data = receivers.take()
+            // 如果取到的EndpointData是PoisonPill（毒药），那么此MessageLoop线程将退出
             if (data == PoisonPill) {
               // Put PoisonPill back so that other MessageLoops can see it.
               receivers.offer(PoisonPill)
               return
             }
-            // 调用process处理消息
+            // 调用EndpointData中的Inbox的process处理消息
             data.inbox.process(Dispatcher.this)
           } catch {
             case NonFatal(e) => logError(e.getMessage, e)

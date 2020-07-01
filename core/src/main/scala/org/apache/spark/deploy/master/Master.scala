@@ -281,7 +281,7 @@ private[deploy] class Master(
         // 注册完成后使用持久化引擎，将ApplicationInfo进行持久化（zk或者文件系统）
         // 用于master recovery时恢复Application
         persistenceEngine.addApplication(app)
-        // 反向向StandaloneSchedulerBacend的AppClient（即StandaloneAppClient）
+        // 反向向StandaloneSchedulerBackend的AppClient（即StandaloneAppClient）
         // 发送RegisteredApplication消息
         driver.send(RegisteredApplication(app.id, self))
         // 注册完成后参与资源调度
@@ -1284,7 +1284,7 @@ private[deploy] class Master(
     // 将worker内使用的内存和cpu数量都加上driver需要的内存和cpu数量
     worker.addDriver(driver)
     driver.worker = Some(worker)
-    // 向Worker发送LaunchDriver消息，让worker来启动driver
+    // 拿到worker的endpoint（worker.endpoint），向Worker发送LaunchDriver消息，让worker来启动driver
     worker.endpoint.send(LaunchDriver(driver.id, driver.desc))
     // 完成后设置driver的状态为running
     driver.state = DriverState.RUNNING

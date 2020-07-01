@@ -81,6 +81,7 @@ object Partitioner {
     // 也是map-reduce中reduce task的个数
     val defaultNumPartitions = if (rdd.context.conf.contains("spark.default.parallelism")) {
       rdd.context.defaultParallelism
+
     } else {
       // 否则使用所有父RDD中最大的分区数作为子RDD的分区数量
       // 可能有不存在分区器的父RDD，所以与hasPartitioner.maxBy(_.partitions.length)值不同

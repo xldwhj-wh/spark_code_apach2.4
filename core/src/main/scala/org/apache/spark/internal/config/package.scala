@@ -551,9 +551,9 @@ package object config {
       .createWithDefault(10000000)
 
   private[spark] val MAX_RESULT_SIZE = ConfigBuilder("spark.driver.maxResultSize")
-    .doc("Size limit for results.")
+    .doc(".")
     .bytesConf(ByteUnit.BYTE)
-    .createWithDefaultString("1g")
+    .createWithDefaultString("1g"Size limit for results)
 
   private[spark] val CREDENTIALS_RENEWAL_INTERVAL_RATIO =
     ConfigBuilder("spark.security.credentials.renewalRatio")

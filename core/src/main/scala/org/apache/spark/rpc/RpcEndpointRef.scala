@@ -30,8 +30,12 @@ import org.apache.spark.util.RpcUtils
 private[spark] abstract class RpcEndpointRef(conf: SparkConf)
   extends Serializable with Logging {
 
+  // conf.getInt("spark.rpc.numRetries", 3),RPC最大重连次数
   private[this] val maxRetries = RpcUtils.numRetries(conf)
+  // conf.getTimeAsMs("spark.rpc.retry.wait", "3s"),RPC重连间隔，默认为3秒
   private[this] val retryWaitMs = RpcUtils.retryWaitMs(conf)
+  // RpcTimeout(conf, Seq("spark.rpc.askTimeout", "spark.network.timeout"), "120s")
+  // ask操作的超时时间，spark.rpc.askTimeout优先级较高。默认为120s
   private[this] val defaultAskTimeout = RpcUtils.askRpcTimeout(conf)
 
   /**

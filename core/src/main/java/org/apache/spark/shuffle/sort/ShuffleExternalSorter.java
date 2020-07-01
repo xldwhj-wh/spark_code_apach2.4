@@ -384,6 +384,9 @@ final class ShuffleExternalSorter extends MemoryConsumer {
 
     // for tests
     assert(inMemSorter != null);
+    // 判断是否大于存储数据记录的上限值，由spark.shuffle.spill.numElementsForceSpillThreshold参数控制，
+    // 默认是 Long 的最大值，如果内存中的数据超过这个值则对当前内存数据进行排序并写入磁盘临时文件
+    // 假设可以源源不断的申请到内存，那么 Write 阶段的所有数据将一直保存在内存中
     if (inMemSorter.numRecords() >= numElementsForSpillThreshold) {
       logger.info("Spilling data because number of spilledRecords crossed the threshold " +
         numElementsForSpillThreshold);

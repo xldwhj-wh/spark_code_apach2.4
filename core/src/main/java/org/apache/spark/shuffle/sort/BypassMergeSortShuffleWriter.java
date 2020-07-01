@@ -98,6 +98,24 @@ final class BypassMergeSortShuffleWriter<K, V> extends ShuffleWriter<K, V> {
    */
   private boolean stopping = false;
 
+  /**
+   * 这种Writer会为每个分区创建一个临时文件，如果分区过多时，会创建很多的output输出流和临时文件对象，占用资源过多，性能会下降
+   *
+   a.确定分区数，然后为每个分区创建DiskBlockObjectWriter和临时文件
+   b.循环将record通过Partitioner进行分区，并写入对应分区临时文件
+   c.将分区数据刷到磁盘
+   d.根据shuffleId和mapId，构建ShuffleDataBlockId，创建合并文件data和合并文件的临时文件，文件格式为:
+   shuffle_{shuffleId}_{mapId}_{reduceId}.data
+   e.将分一个分区产生的多个文件合并到一个总的临时文件，合并后会重命名为最终输出文件名，并返回一个对应分区文件长度的数组
+   f.创建索引文件index和索引临时文件，每一个分区的长度和offset写入索引文件等；并且重命名临时data文件和临时index文件
+   g.将一些信息封装到MapStatus返回
+   * @param blockManager
+   * @param shuffleBlockResolver
+   * @param handle
+   * @param mapId
+   * @param taskContext
+   * @param conf
+   */
   BypassMergeSortShuffleWriter(
       BlockManager blockManager,
       IndexShuffleBlockResolver shuffleBlockResolver,
@@ -106,6 +124,11 @@ final class BypassMergeSortShuffleWriter<K, V> extends ShuffleWriter<K, V> {
       TaskContext taskContext,
       SparkConf conf) {
     // Use getSizeAsKb (not bytes) to maintain backwards compatibility if no units are provided
+    // 获取spark.shuffle.file.buffer参数值，默认32k,这里是一个比较重要的调优参数，
+    // 该参数用于设置shuffle write task的BufferedOutputStream的buffer缓冲大小。
+    // 将数据写到磁盘文件之前，会先写入buffer缓冲中，待缓冲写满之后，才会溢写到磁盘
+    //如果作业可用的内存资源较为充足的话，可以适当增加这个参数的大小（比如64k），从而减少shuffle write过程中溢写磁盘文件的次数，
+    // 也就可以减少磁盘IO次数，进而提升性能
     this.fileBufferSize = (int) conf.getSizeAsKb("spark.shuffle.file.buffer", "32k") * 1024;
     this.transferToEnabled = conf.getBoolean("spark.file.transferTo", true);
     this.blockManager = blockManager;
@@ -130,6 +153,9 @@ final class BypassMergeSortShuffleWriter<K, V> extends ShuffleWriter<K, V> {
     }
     final SerializerInstance serInstance = serializer.newInstance();
     final long openStartTime = System.nanoTime();
+    // 根据finalRDD的分区个数（即reduceTask的个数）
+    // 为每一个parttion创建对应的DiskBlockObjectWriter
+    // DiskBlockobjectWriter用于写该临时文件
     partitionWriters = new DiskBlockObjectWriter[numPartitions];
     partitionWriterSegments = new FileSegment[numPartitions];
     for (int i = 0; i < numPartitions; i++) {
@@ -148,18 +174,25 @@ final class BypassMergeSortShuffleWriter<K, V> extends ShuffleWriter<K, V> {
     while (records.hasNext()) {
       final Product2<K, V> record = records.next();
       final K key = record._1();
+      //循环records ,将数据写入到对应的临时文件中,此时并没有对文件进行排序
+      //确定Partition方法对key进行分区，从而确定key被分配到哪个分区，并获取该分区的partitionId
+      //然后再获取该partitionId对应的DiskWriter写入record
       partitionWriters[partitioner.getPartition(key)].write(key, record._2());
     }
 
+    //让输出流中的数据全部刷新到磁盘文件中
     for (int i = 0; i < numPartitions; i++) {
       final DiskBlockObjectWriter writer = partitionWriters[i];
       partitionWriterSegments[i] = writer.commitAndGet();
       writer.close();
     }
 
+    //先根据shuffleID和mapID去构建一个结果文件对象output,
+    //最终的输出文件名称为："shuffle_" + shuffleId + "_" + mapId + "_" + reduceId
     File output = shuffleBlockResolver.getDataFile(shuffleId, mapId);
     File tmp = Utils.tempFileWith(output);
     try {
+      // 合并每个partition对应的文件到一个文件中
       partitionLengths = writePartitionedFile(tmp);
       shuffleBlockResolver.writeIndexFileAndCommit(shuffleId, mapId, partitionLengths, tmp);
     } finally {
@@ -192,12 +225,14 @@ final class BypassMergeSortShuffleWriter<K, V> extends ShuffleWriter<K, V> {
     final long writeStartTime = System.nanoTime();
     boolean threwException = true;
     try {
+      // 遍历每一个分区，将数据写入最终的一个文件
       for (int i = 0; i < numPartitions; i++) {
         final File file = partitionWriterSegments[i].file();
         if (file.exists()) {
           final FileInputStream in = new FileInputStream(file);
           boolean copyThrewException = true;
           try {
+            // 遍历分区，组中复制每个分区对应的所有小文件的数据，写入一个文件
             lengths[i] = Utils.copyStream(in, out, false, transferToEnabled);
             copyThrewException = false;
           } finally {

@@ -123,7 +123,9 @@ public class UnsafeShuffleWriter<K, V> extends ShuffleWriter<K, V> {
       int mapId,
       TaskContext taskContext,
       SparkConf sparkConf) throws IOException {
+    //获取下游RDD的分区个数
     final int numPartitions = handle.dependency().partitioner().numPartitions();
+    // 这里判断Partition个数不能大于16777216个(2^24）
     if (numPartitions > SortShuffleManager.MAX_SHUFFLE_OUTPUT_PARTITIONS_FOR_SERIALIZED_MODE()) {
       throw new IllegalArgumentException(
         "UnsafeShuffleWriter can only be used for shuffles with at most " +
@@ -142,10 +144,14 @@ public class UnsafeShuffleWriter<K, V> extends ShuffleWriter<K, V> {
     this.taskContext = taskContext;
     this.sparkConf = sparkConf;
     this.transferToEnabled = sparkConf.getBoolean("spark.file.transferTo", true);
+    // Shuffle初始化的排序缓冲区 默认是4KB
     this.initialSortBufferSize = sparkConf.getInt("spark.shuffle.sort.initialBufferSize",
                                                   DEFAULT_INITIAL_SORT_BUFFER_SIZE);
+    //将数据写到磁盘文件之前,会先写入buffer缓冲中，待缓冲写满之后，才会溢写到磁盘
+    //由参数spark.shuffle.file.buffer 配置
     this.inputBufferSizeInBytes =
       (int) (long) sparkConf.get(package$.MODULE$.SHUFFLE_FILE_BUFFER_SIZE()) * 1024;
+    //默认大小为32k，大小由参数 spark.shuffle.unsafe.file.output.buffer 配置
     this.outputBufferSizeInBytes =
       (int) (long) sparkConf.get(package$.MODULE$.SHUFFLE_UNSAFE_FILE_OUTPUT_BUFFER_SIZE()) * 1024;
     open();
@@ -184,9 +190,13 @@ public class UnsafeShuffleWriter<K, V> extends ShuffleWriter<K, V> {
     // generic throwables.
     boolean success = false;
     try {
+      // 遍历每条数据，写入到sort中
+      // 通过它来对数据进行分Partition之后，各个Partition之间的数据就是有序的了
       while (records.hasNext()) {
         insertRecordIntoSorter(records.next());
       }
+      // 将record进行排序，并在排序完成后写入磁盘文件作为spill file，
+      // 再将多个spill file合并成一个输出文件。
       closeAndWriteOutput();
       success = true;
     } finally {
@@ -255,7 +265,10 @@ public class UnsafeShuffleWriter<K, V> extends ShuffleWriter<K, V> {
   void insertRecordIntoSorter(Product2<K, V> record) throws IOException {
     assert(sorter != null);
     final K key = record._1();
+    //根据Record对应key进行分区，如果使用的是HashPartitions，这会将key的HashCode
+    //与partition数目进行取模运行。来确定这条记录属于哪个分区
     final int partitionId = partitioner.getPartition(key);
+    // 清空serBuffer的内存空间，这个内存空间用于存放字节输出流
     serBuffer.reset();
     serOutputStream.writeKey(key, OBJECT_CLASS_TAG);
     serOutputStream.writeValue(record._2(), OBJECT_CLASS_TAG);
@@ -263,7 +276,9 @@ public class UnsafeShuffleWriter<K, V> extends ShuffleWriter<K, V> {
 
     final int serializedRecordSize = serBuffer.size();
     assert (serializedRecordSize > 0);
-
+    //被写入到 sorter（ShuffleExternalSorter）中。在sorter中序列化数据被写入到内存中（内存不足会溢出到磁盘中），
+    // 其地址信息被写入到 ShuffleInMemorySorter 中
+    //serBuffer.getBuf() 就是获取上面写到buf中的数据
     sorter.insertRecord(
       serBuffer.getBuf(), Platform.BYTE_ARRAY_OFFSET, serializedRecordSize, partitionId);
   }

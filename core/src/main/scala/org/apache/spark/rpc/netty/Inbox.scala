@@ -25,29 +25,38 @@ import org.apache.spark.SparkException
 import org.apache.spark.internal.Logging
 import org.apache.spark.rpc.{RpcAddress, RpcEndpoint, ThreadSafeRpcEndpoint}
 
-
+/**
+  * Inbox盒子内的消息
+  */
 private[netty] sealed trait InboxMessage
 
+// RpcEndpoint处理此类型的消息后不需要向客户端回复信息
 private[netty] case class OneWayMessage(
     senderAddress: RpcAddress,
     content: Any) extends InboxMessage
 
+// RPC消息，pcEndpoint处理此类型的消息后需要向客户端回复信息
 private[netty] case class RpcMessage(
     senderAddress: RpcAddress,
     content: Any,
     context: NettyRpcCallContext) extends InboxMessage
 
+// Inbox实例化后，通知与此Inbox相关联的PrcEndpoint启动
 private[netty] case object OnStart extends InboxMessage
 
+// Inbox停止后，通知与此Inbox相关联的PrcEndpoint启
 private[netty] case object OnStop extends InboxMessage
 
 /** A message to tell all endpoints that a remote process has connected. */
+// 告诉所有的RpcEndpoint，有远端进程已经与当前PPC服务建立了连接
 private[netty] case class RemoteProcessConnected(remoteAddress: RpcAddress) extends InboxMessage
 
 /** A message to tell all endpoints that a remote process has disconnected. */
+// 告诉所有的RpcEndpoint，有远端进程已经当前PPC服务建断开了连接
 private[netty] case class RemoteProcessDisconnected(remoteAddress: RpcAddress) extends InboxMessage
 
 /** A message to tell all endpoints that a network error has happened. */
+// 告诉所有的RpcEndpoint，与远端某个地址之间的连接发生了错误
 private[netty] case class RemoteProcessConnectionError(cause: Throwable, remoteAddress: RpcAddress)
   extends InboxMessage
 
@@ -61,6 +70,7 @@ private[netty] class Inbox(
 
   inbox =>  // Give this an alias so we can use it more clearly in closures.
 
+  // 消息列表，用于缓存与Inbox处于同一EndpointData中的PrcEndpoint对应处理的消息
   @GuardedBy("this")
   protected val messages = new java.util.LinkedList[InboxMessage]()
 
@@ -69,14 +79,17 @@ private[netty] class Inbox(
   private var stopped = false
 
   /** Allow multiple threads to process messages at the same time. */
+  // 是否允许多个线程同时处理messages中的消息
   @GuardedBy("this")
   private var enableConcurrent = false
 
   /** The number of threads processing messages for this inbox. */
+  // 激活线程的数量
   @GuardedBy("this")
   private var numActiveThreads = 0
 
   // OnStart should be the first message to process
+  // 向Inbox自身的messages列表中放入OnStart消息
   // 当注册endPoint时都会调用这个异步方法，message放入一个样例类消息队列
   // 发送OnStart方法给process
   inbox.synchronized {
@@ -89,9 +102,12 @@ private[netty] class Inbox(
   def process(dispatcher: Dispatcher): Unit = {
     var message: InboxMessage = null
     inbox.synchronized {
+      // 如果不允许多线程同时处理messages消息列表，并且当前激活线程不为0
+      // 说明已经有线程在处理消息，当前线程不允许处理消息，直接返回
       if (!enableConcurrent && numActiveThreads != 0) {
         return
       }
+      // 从messages列表中取出消息
       message = messages.poll()
       if (message != null) {
         numActiveThreads += 1
@@ -100,7 +116,9 @@ private[netty] class Inbox(
       }
     }
     while (true) {
+      // safelyCall匹配执行过程中错误处理
       safelyCall(endpoint) {
+        // 根据消息类型进行匹配，并根据对应的逻辑进行处理
         message match {
           case RpcMessage(_sender, content, context) =>
             try {
@@ -122,7 +140,6 @@ private[netty] class Inbox(
 
           // 匹配到发送过来的OnStart消息后，调用RpcEndpoint对象的onStart方法
           // （StandaloneAppClient构建client使用StandaloneAppClient内部类ClientEndpoint的OnStart方法）
-          //
           case OnStart =>
             endpoint.onStart()
             if (!endpoint.isInstanceOf[ThreadSafeRpcEndpoint]) {
@@ -152,6 +169,7 @@ private[netty] class Inbox(
         }
       }
 
+      // 对激活线程数量进行控制
       inbox.synchronized {
         // "enableConcurrent" will be set to false after `onStop` is called, so we should check it
         // every time.

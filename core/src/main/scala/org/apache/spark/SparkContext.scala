@@ -376,7 +376,7 @@ class SparkContext(config: SparkConf) extends Logging {
 
   // 代码块，每次构造SparkContext时都会执行
   try {
-    // 对SparkConf进行复制，然后对各种配置信息进行校验
+    // 对SparkConf进行复制，验然后对各种配置信息进行校
     _conf = config.clone()
     _conf.validateSettings()
 
@@ -431,7 +431,7 @@ class SparkContext(config: SparkConf) extends Logging {
       }
     }
 
-    // 时间总线，接收各个使用方的事件
+    // 事件总线，接收各个使用方的事件
     _listenerBus = new LiveListenerBus(_conf)
 
     // Initialize the app status store and listener before SparkEnv is created so that it gets
