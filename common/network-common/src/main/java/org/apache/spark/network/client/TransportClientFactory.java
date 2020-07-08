@@ -76,6 +76,7 @@ public class TransportClientFactory implements Closeable {
   private final TransportContext context;
   private final TransportConf conf;
   private final List<TransportClientBootstrap> clientBootstraps;
+  // 连接池缓存，保存每个Socket地址的ClientPool
   private final ConcurrentHashMap<SocketAddress, ClientPool> connectionPool;
 
   /** Random number generator for picking connections between peers. */

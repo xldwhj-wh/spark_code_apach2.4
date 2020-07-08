@@ -36,9 +36,11 @@ import org.apache.spark.util.Utils
  *
  * Only streaming (openStream) is supported.
  */
+// 为NettyRpcEnv提供文件服务的能力
 private[netty] class NettyStreamManager(rpcEnv: NettyRpcEnv)
   extends StreamManager with RpcEnvFileServer {
 
+  // NettyStreamManager提供对普通文件、jar文件以及目录的下载
   private val files = new ConcurrentHashMap[String, File]()
   private val jars = new ConcurrentHashMap[String, File]()
   private val dirs = new ConcurrentHashMap[String, File]()

@@ -95,6 +95,7 @@ public class TransportContext {
    * a new Client. Bootstraps will be executed synchronously, and must run successfully in order
    * to create a Client.
    */
+  // TransportClientBootstrap客户端引导程序列表
   public TransportClientFactory createClientFactory(List<TransportClientBootstrap> bootstraps) {
     return new TransportClientFactory(this, bootstraps);
   }
@@ -104,6 +105,7 @@ public class TransportContext {
   }
 
   /** Create a server which will attempt to bind to a specific port. */
+  // TransportServerBootstrap服务端引导程序
   public TransportServer createServer(int port, List<TransportServerBootstrap> bootstraps) {
     return new TransportServer(this, null, port, rpcHandler, bootstraps);
   }

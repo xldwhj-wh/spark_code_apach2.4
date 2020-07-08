@@ -47,19 +47,21 @@ private[netty] class NettyRpcEnv(
     securityManager: SecurityManager,
     numUsableCores: Int) extends RpcEnv(conf) with Logging {
 
+  // 创建传输上下文TransportConf
   private[netty] val transportConf = SparkTransportConf.fromSparkConf(
     conf.clone.set("spark.rpc.io.numConnectionsPerPeer", "1"),
     "rpc",
     // 设置Netty传输线程数
     conf.getInt("spark.rpc.io.threads", numUsableCores))
 
-  // dispatcher对象中有消息队列和消息的循环获取转发
+  // 创建消息调度器Dispatcher，其对象中有消息队列和消息的循环获取转发
   // 负责将RPC消息路由到该对此消息进行处理的RpcEndPoint(RPC端点)
   private val dispatcher: Dispatcher = new Dispatcher(this, numUsableCores)
 
+  // 创建streamManager，此处的NettyStreamManager用于提供NettyRpcEnv的文件流服务
   private val streamManager = new NettyStreamManager(this)
-
-  //
+  // 创建传输上下文TransportContext
+  // TransportContext是NettyRpcEnv提供服务端与客户端能力的前提
   private val transportContext = new TransportContext(transportConf,
     new NettyRpcHandler(dispatcher, this, streamManager))
 

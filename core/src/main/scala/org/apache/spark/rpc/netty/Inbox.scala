@@ -44,7 +44,7 @@ private[netty] case class RpcMessage(
 // Inbox实例化后，通知与此Inbox相关联的PrcEndpoint启动
 private[netty] case object OnStart extends InboxMessage
 
-// Inbox停止后，通知与此Inbox相关联的PrcEndpoint启
+// Inbox停止后，通知与此Inbox相关联的PpcEndpoint停止
 private[netty] case object OnStop extends InboxMessage
 
 /** A message to tell all endpoints that a remote process has connected. */
@@ -70,7 +70,7 @@ private[netty] class Inbox(
 
   inbox =>  // Give this an alias so we can use it more clearly in closures.
 
-  // 消息列表，用于缓存与Inbox处于同一EndpointData中的PrcEndpoint对应处理的消息
+  // 消息列表，用于缓存与Inbox处于同一EndpointData中的PpcEndpoint对应处理的消息
   @GuardedBy("this")
   protected val messages = new java.util.LinkedList[InboxMessage]()
 
@@ -205,7 +205,9 @@ private[netty] class Inbox(
       // thread that is processing messages. So `RpcEndpoint.onStop` can release its resources
       // safely.
       enableConcurrent = false
+      // 设置当前Inbox为停止状态
       stopped = true
+      // 添加OnStop消息
       messages.add(OnStop)
       // Note: The concurrent events in messages will be processed one by one.
     }

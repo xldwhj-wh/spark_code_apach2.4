@@ -48,12 +48,14 @@ object SparkTransportConf {
    *                       use the given number of cores, rather than all of the machine's cores.
    *                       This restriction will only occur if these properties are not already set.
    */
+  // 创建TransportConf
   def fromSparkConf(_conf: SparkConf, module: String, numUsableCores: Int = 0): TransportConf = {
     val conf = _conf.clone
 
     // Specify thread configuration based on our JVM's allocation of cores (rather than necessarily
     // assuming we have all the machine's cores).
     // NB: Only set if serverThreads/clientThreads not already set.
+    // 设置可用的内核数，如果numUsableCores<0，则为min(系统可用处理器的数量,8)
     val numThreads = defaultNumThreads(numUsableCores)
     conf.setIfMissing(s"spark.$module.io.serverThreads", numThreads.toString)
     conf.setIfMissing(s"spark.$module.io.clientThreads", numThreads.toString)

@@ -39,7 +39,7 @@ import org.apache.spark.util.ThreadUtils
 private[netty] class Dispatcher(nettyEnv: NettyRpcEnv, numUsableCores: Int) extends Logging {
 
   /**
-    * EndpointDataRPC端点数据，包括Inbox、RpcEndpoint、NettyRpcEndpointRef
+    * EndpointData RPC端点数据，包括Inbox、RpcEndpoint、NettyRpcEndpointRef
     * @param name
     * @param endpoint
     * @param ref
@@ -91,7 +91,7 @@ private[netty] class Dispatcher(nettyEnv: NettyRpcEnv, numUsableCores: Int) exte
       // receivers这个消息队列中放着应该去那个EndpointData中获取Message处理
       // 其实就是进入Dispatcher当前这个类中的MessageLoop方法
       // 当这个方法new Dispatcher后会一直保持
-      // 将消息放入待处理的消息队列队尾，MessageLoop线程异步获取到此EndpointData
+      // 将消息放入待处理的消息receivers阻塞队列队尾，MessageLoop线程异步获取到此EndpointData
       // 并处理其Inbox中刚刚放入的OnStart消息，最终调用RocEndpoint的OnStart方法在RpcEndpoint开始处理消息前做一些准备工作
       receivers.offer(data)  // for the OnStart message
     }
@@ -115,6 +115,7 @@ private[netty] class Dispatcher(nettyEnv: NettyRpcEnv, numUsableCores: Int) exte
     // `removeRpcEndpointRef`.
   }
 
+  // 对RpcEndPoint去注册
   def stop(rpcEndpointRef: RpcEndpointRef): Unit = {
     synchronized {
       if (stopped) {
